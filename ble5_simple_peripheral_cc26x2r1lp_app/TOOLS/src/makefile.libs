@@ -1,6 +1,6 @@
 #
 # This file was generated based on the configuration script:
-#     D:\HandsFree\ble5_simple_peripheral_cc26x2r1lp_app\TOOLS\ble_release.cfg
+#     D:\HandsFreeV5\ble5_simple_peripheral_cc26x2r1lp_app\TOOLS\ble_release.cfg
 #
 # This makefile may be included in other makefiles that need to build
 # the libraries containing the compiled source files generated as
@@ -14,7 +14,7 @@
 #
 # The absolute path to the generated source directory (at the time the
 # sources were generated) is:
-#    D:\HandsFree\ble5_simple_peripheral_cc26x2r1lp_app\TOOLS\src
+#    D:\HandsFreeV5\ble5_simple_peripheral_cc26x2r1lp_app\TOOLS\src
 #
 GEN_SRC_DIR ?= ../TOOLS/src
 

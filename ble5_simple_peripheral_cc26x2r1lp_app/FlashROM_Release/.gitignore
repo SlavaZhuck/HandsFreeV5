@@ -1,4 +1,5 @@
 /Application/
+/sources.mk
 /Drivers/
 /ICall/
 /ICallBLE/
