@@ -183,7 +183,7 @@ static gattAttribute_t Data_ServiceAttrTbl[] =
     // STREAM_INPUT Characteristic Value
     {
         { ATT_UUID_SIZE, ds_STREAM_INPUTUUID },
-        GATT_PERMIT_WRITE | GATT_PERMIT_WRITE,
+        GATT_PERMIT_READ | GATT_PERMIT_WRITE,
         0,
         ds_STREAM_INPUTVal
     },
@@ -197,7 +197,7 @@ static gattAttribute_t Data_ServiceAttrTbl[] =
       // STREAM_OUTPUT Characteristic Value
       {
         { ATT_UUID_SIZE, ds_STREAM_OUTPUTUUID },
-        GATT_PERMIT_READ,
+        GATT_PERMIT_READ | GATT_PERMIT_WRITE,
         0,
         ds_STREAM_OUTPUTVal
       },
@@ -359,7 +359,7 @@ bStatus_t DataService_SetParameter(uint8_t param, uint16_t len, void *value)
                                    1) ? "Notification enabled" :
                                   "Indication enabled"));
             // Try to send notification.
-            GATTServApp_ProcessCharCfg(attrConfig, pAttrVal, needAuth,
+            ret = GATTServApp_ProcessCharCfg(attrConfig, pAttrVal, needAuth,
                                        Data_ServiceAttrTbl,
                                        GATT_NUM_ATTRS(
                                            Data_ServiceAttrTbl),

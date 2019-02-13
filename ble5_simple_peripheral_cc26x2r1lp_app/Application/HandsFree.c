@@ -28,9 +28,20 @@ extern PIN_Handle ledPinHandle;
 uint16_t counter_packet_send = 0;
 uint16_t counter_packet_received = 0;
 float packet_lost = 0;
+uint16_t error_counter_packet_send = 0;
 
 void start_voice_handle(void)
 {
+//    pzSendParamReq_t *req =
+//        (pzSendParamReq_t *)ICall_malloc(sizeof(pzSendParamReq_t));
+//    if(req)
+//    {
+//        req->connHandle = (uint16_t)0;
+//        if(ProjectZero_enqueueMsg(PZ_SEND_PARAM_UPD_EVT, req) != SUCCESS)
+//        {
+//          ICall_free(req);
+//        }
+//    }
     stream_on = 1;
     PIN_setOutputValue(ledPinHandle, Board_PIN_GLED, 1);
     GPTimerCC26XX_start(samp_tim_hdl);
@@ -102,7 +113,7 @@ void samp_timer_callback(GPTimerCC26XX_Handle handle, GPTimerCC26XX_IntMask inte
 
     if(stream_on)
     {
-        ProjectZero_enqueueMsg(PZ_SEND_PACKET, NULL);
+        ProjectZero_enqueueMsg(PZ_SEND_PACKET_EVT, NULL);
     }
 }
 
@@ -138,15 +149,32 @@ void task_Handler (pzMsg_t *pMsg)
                   break;
             }
             break;
-        case PZ_SEND_PACKET:
-            uint8_t send_array[DS_STREAM_OUTPUT_LEN] = {(uint8_t)counter_packet_send};
-            DataService_SetParameter(DS_STREAM_OUTPUT_ID, DS_STREAM_OUTPUT_LEN, send_array);
+        case PZ_SEND_PACKET_EVT:
+            uint8_t send_array[DS_STREAM_OUTPUT_LEN];
+            send_array[DS_STREAM_OUTPUT_LEN - 4] = counter_packet_send >> 24;
+            send_array[DS_STREAM_OUTPUT_LEN - 3] = counter_packet_send >> 16;
+            send_array[DS_STREAM_OUTPUT_LEN - 2] = counter_packet_send >> 8;
+            send_array[DS_STREAM_OUTPUT_LEN - 1] = counter_packet_send;
+            uint8_t status = DataService_SetParameter(DS_STREAM_OUTPUT_ID, DS_STREAM_OUTPUT_LEN, send_array);
+            if((status != SUCCESS) || (status == 0x15))
+            {
+                error_counter_packet_send++;
+            }
             counter_packet_send++;
             break;
-        case PZ_I2C_Read_status:
+        case PZ_I2C_Read_status_EVT:
             max9860_I2C_Read_Status();
             break;
-
+        case PZ_SEND_START_STREAM_EVT:
+            error_counter_packet_send = 0;
+            counter_packet_send = 0;
+            counter_packet_received = 0;
+            start_voice_handle();
+            break;
+        case PZ_SEND_STOP_STREAM_EVT:
+            stop_voice_handle();
+            ProjectZero_enqueueMsg(PZ_START_ADV_EVT, NULL);
+            break;
 
         default:
             break;

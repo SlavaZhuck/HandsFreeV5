@@ -468,12 +468,14 @@ static void ProjectZero_init(void)
       // This API is documented in hci.h
       // See the LE Data Length Extension section in the BLE5-Stack User's Guide for information on using this command:
       // http://software-dl.ti.com/lprf/ble5stack-latest/
-      HCI_LE_WriteSuggestedDefaultDataLenCmd(APP_SUGGESTED_PDU_SIZE, APP_SUGGESTED_TX_TIME);
+      HCI_LE_WriteSuggestedDefaultDataLenCmd(APP_SUGGESTED_PDU_SIZE, LL_MAX_LINK_DATA_TIME_CODED); //APP_SUGGESTED_TX_TIME
     }
 
     // Initialize GATT Client, used by GAPBondMgr to look for RPAO characteristic for network privacy
     GATT_InitClient();
 
+  // Register to receive incoming ATT Indications/Notifications
+  GATT_RegisterForInd(selfEntity);
     // Initialize Connection List
     ProjectZero_clearConnListEntry(LINKDB_CONNHANDLE_ALL);
 
@@ -864,7 +866,7 @@ static void ProjectZero_processGapMessage(gapEventHdr_t *pMsg)
                               0);
             APP_ASSERT(status == SUCCESS);
         }
-
+        ProjectZero_enqueueMsg(PZ_SEND_STOP_STREAM_EVT, NULL);
         break;
     }
 
@@ -879,7 +881,8 @@ static void ProjectZero_processGapMessage(gapEventHdr_t *pMsg)
 
         if(pPkt->hdr.status == SUCCESS)
         {
-            stream_on = 0;
+
+            //stop_voice_handle();
             // Add connection to list
             ProjectZero_addConn(pPkt->connectionHandle);
 
@@ -890,18 +893,6 @@ static void ProjectZero_processGapMessage(gapEventHdr_t *pMsg)
             Log_info1("Connected. Peer address: " \
                         ANSI_COLOR(FG_GREEN)"%s"ANSI_COLOR(ATTR_RESET),
                       (uintptr_t)addrStr);
-
-            // If we are just connecting after an OAD send SVC changed
-//            if(sendSvcChngdOnNextBoot == TRUE)
-//            {
-//                /* Warning: This requires -DV41_FEATURES=L2CAP_COC_CFG to be
-//                 * defined in the build_config.opt of the stack project
-//                 * If L2CAP CoC is not desired comment the following code out
-//                 */
-//                GAPBondMgr_ServiceChangeInd(pPkt->connectionHandle, TRUE);
-//
-//                sendSvcChngdOnNextBoot = FALSE;
-//            }
         }
 
         if(linkDB_NumActive() < MAX_NUM_BLE_CONNS)
@@ -914,7 +905,8 @@ static void ProjectZero_processGapMessage(gapEventHdr_t *pMsg)
 
     case GAP_LINK_TERMINATED_EVENT:
     {
-        stream_on = 0;
+        ProjectZero_enqueueMsg(PZ_SEND_STOP_STREAM_EVT, NULL);
+        //stop_voice_handle();
         gapTerminateLinkEvent_t *pPkt = (gapTerminateLinkEvent_t *)pMsg;
 
         // Display the amount of current connections
@@ -1364,7 +1356,7 @@ static uint8_t ProjectZero_addConn(uint16_t connHandle)
             }
 
             // Set default PHY to 1M
-            connList[i].currPhy = HCI_PHY_2_MBPS; // TODO: Is this true, neccessarily?
+            connList[i].currPhy = HCI_PHY_1_MBPS; // TODO: Is this true, neccessarily?
 
             break;
         }

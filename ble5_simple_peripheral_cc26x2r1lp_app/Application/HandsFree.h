@@ -10,14 +10,17 @@
 
 #include "project_zero.h"
 #include "./services/data_service.h"
+#include "max9860_i2c.h"
 #include <ti/drivers/timer/GPTimerCC26XX.h>
 
-#define TMR_PERIOD                          48000000UL
+#define TMR_PERIOD                          (48000000UL)
 #define LOW_STATE_TIME                      ((TMR_PERIOD / 10) * 9)
 #define HIGH_STATE_TIME                     (TMR_PERIOD - LOW_STATE_TIME)
-#define SAMP_TIME                         479999UL
-//#define SAMP_TIME                          (4799999/4)
 
+#define SAMP_PERIOD                       (10.0f)  //ms
+#define SAMP_TIME                         (TMR_PERIOD * (SAMP_PERIOD / 1000.0f) - 1)
+//#define SAMP_TIME                          (4799999/4)
+#define TRANSMIT_DATA_LENGTH                47
 
 void start_voice_handle(void);
 void stop_voice_handle(void);

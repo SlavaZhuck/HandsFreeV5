@@ -126,23 +126,27 @@ extern "C"
 #define PZ_START_ADV_EVT         7  /* Request advertisement start from task ctx   */
 #define PZ_SEND_PARAM_UPD_EVT    8  /* Request parameter update req be sent        */
 #define PZ_CONN_EVT              9  /* Connection Event End notice                 */
-#define PZ_SEND_PACKET           10  /* Connection Event End notice                 */
-#define PZ_I2C_Read_status       11  /* Connection Event End notice                 */
-
+#define PZ_SEND_PACKET_EVT       10  /* Connection Event End notice                 */
+#define PZ_SEND_START_STREAM_EVT 11  /* Connection Event End notice                 */
+#define PZ_SEND_STOP_STREAM_EVT  12  /* Connection Event End notice                 */
+#define PZ_I2C_Read_status_EVT   13  /* Connection Event End notice                 */
 // General discoverable mode: advertise indefinitely
 #define DEFAULT_DISCOVERABLE_MODE             GAP_ADTYPE_FLAGS_GENERAL
 
 // Minimum connection interval (units of 1.25ms, 80=100ms) for parameter update request
-#define DEFAULT_DESIRED_MIN_CONN_INTERVAL     8
+
+
+
+#define DEFAULT_DESIRED_MIN_CONN_INTERVAL     (SAMP_PERIOD / CONN_INTERVAL_MS_CONVERSION)
 
 // Maximum connection interval (units of 1.25ms, 800=1000ms) for  parameter update request
-#define DEFAULT_DESIRED_MAX_CONN_INTERVAL     8
+#define DEFAULT_DESIRED_MAX_CONN_INTERVAL     (SAMP_PERIOD / CONN_INTERVAL_MS_CONVERSION)
 
 // Slave latency to use for parameter update request
 #define DEFAULT_DESIRED_SLAVE_LATENCY         0
 
 // Supervision timeout value (units of 10ms, 1000=10s) for parameter update request
-#define DEFAULT_DESIRED_CONN_TIMEOUT          2000
+#define DEFAULT_DESIRED_CONN_TIMEOUT          200
 
 // Supervision timeout conversion rate to miliseconds
 #define CONN_TIMEOUT_MS_CONVERSION            10
@@ -151,7 +155,7 @@ extern "C"
 #define CONN_INTERVAL_MS_CONVERSION           1.25
 
 // Pass parameter updates to the app for it to decide.
-#define DEFAULT_PARAM_UPDATE_REQ_DECISION     GAP_UPDATE_REQ_PASS_TO_APP
+#define DEFAULT_PARAM_UPDATE_REQ_DECISION     GAP_UPDATE_REQ_ACCEPT_ALL//GAP_UPDATE_REQ_ACCEPT_ALL
 
 // Delay (in ms) after connection establishment before sending a parameter update requst
 #define PZ_SEND_PARAM_UPDATE_DELAY            0

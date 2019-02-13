@@ -58,11 +58,13 @@ extern "C"
  * INCLUDES
  */
 #include <bcomdef.h>
+#include <HandsFree.h>
 
 /*********************************************************************
  * CONSTANTS
  */
 // Service UUID
+
 #define DATA_SERVICE_SERV_UUID 0xB000
 #define DATA_SERVICE_SERV_UUID_BASE128(uuid) 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xB0, 0x00, 0x40, 0x51, 0x04, LO_UINT16(uuid), HI_UINT16(uuid), 0x00, 0xF0
 
@@ -77,15 +79,15 @@ extern "C"
 #define DS_STREAM_INPUT_ID                 1
 #define DS_STREAM_INPUT_UUID               0xB002
 #define DS_STREAM_INPUT_UUID_BASE128(uuid) 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xB0, 0x00, 0x40, 0x51, 0x04, LO_UINT16(uuid), HI_UINT16(uuid), 0x00, 0xF0
-#define DS_STREAM_INPUT_LEN                47
-#define DS_STREAM_INPUT_LEN_MIN            47
+#define DS_STREAM_INPUT_LEN                TRANSMIT_DATA_LENGTH
+#define DS_STREAM_INPUT_LEN_MIN            TRANSMIT_DATA_LENGTH
 
 // Stream Characteristic defines
 #define DS_STREAM_OUTPUT_ID                 2
 #define DS_STREAM_OUTPUT_UUID               0xB003
 #define DS_STREAM_OUTPUT_UUID_BASE128(uuid) 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xB0, 0x00, 0x40, 0x51, 0x04, LO_UINT16(uuid), HI_UINT16(uuid), 0x00, 0xF0
-#define DS_STREAM_OUTPUT_LEN                47
-#define DS_STREAM_OUTPUT_LEN_MIN            47
+#define DS_STREAM_OUTPUT_LEN                TRANSMIT_DATA_LENGTH
+#define DS_STREAM_OUTPUT_LEN_MIN            TRANSMIT_DATA_LENGTH
 
 /*********************************************************************
  * TYPEDEFS
