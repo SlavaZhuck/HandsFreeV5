@@ -27,7 +27,7 @@ void stop_voice_handle(void);
 
 void HandsFree_init (void);
 
-void task_Handler (pzMsg_t *pMsg);
+
 
 void blink_timer_callback(GPTimerCC26XX_Handle handle, GPTimerCC26XX_IntMask interruptMask);
 void samp_timer_callback(GPTimerCC26XX_Handle handle, GPTimerCC26XX_IntMask interruptMask);

@@ -30,6 +30,9 @@ uint16_t counter_packet_received = 0;
 float packet_lost = 0;
 uint16_t error_counter_packet_send = 0;
 
+uint8_t send_array[DS_STREAM_OUTPUT_LEN];
+
+
 void start_voice_handle(void)
 {
 //    pzSendParamReq_t *req =
@@ -117,10 +120,11 @@ void samp_timer_callback(GPTimerCC26XX_Handle handle, GPTimerCC26XX_IntMask inte
     }
 }
 
-void task_Handler (pzMsg_t *pMsg)
+void USER_task_Handler (pzMsg_t *pMsg)
 {
     // Cast to pzCharacteristicData_t* here since it's a common message pdu type.
     pzCharacteristicData_t *pCharData = (pzCharacteristicData_t *)pMsg->pData;
+    uint8_t status;
 
     switch(pMsg->event)
     {
@@ -150,12 +154,12 @@ void task_Handler (pzMsg_t *pMsg)
             }
             break;
         case PZ_SEND_PACKET_EVT:
-            uint8_t send_array[DS_STREAM_OUTPUT_LEN];
+
             send_array[DS_STREAM_OUTPUT_LEN - 4] = counter_packet_send >> 24;
             send_array[DS_STREAM_OUTPUT_LEN - 3] = counter_packet_send >> 16;
             send_array[DS_STREAM_OUTPUT_LEN - 2] = counter_packet_send >> 8;
             send_array[DS_STREAM_OUTPUT_LEN - 1] = counter_packet_send;
-            uint8_t status = DataService_SetParameter(DS_STREAM_OUTPUT_ID, DS_STREAM_OUTPUT_LEN, send_array);
+            status = DataService_SetParameter(DS_STREAM_OUTPUT_ID, DS_STREAM_OUTPUT_LEN, send_array);
             if((status != SUCCESS) || (status == 0x15))
             {
                 error_counter_packet_send++;

@@ -765,7 +765,7 @@ static void ProjectZero_processApplicationMessage(pzMsg_t *pMsg)
         break;
 
       default:
-          task_Handler(pMsg);
+          USER_task_Handler(pMsg);
         break;
     }
 

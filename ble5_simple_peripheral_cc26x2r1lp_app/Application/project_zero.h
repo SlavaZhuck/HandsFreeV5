@@ -265,7 +265,7 @@ void ProjectZero_DataService_CfgChangeHandler( pzCharacteristicData_t *pCharData
 /* Utility functions */
 status_t ProjectZero_enqueueMsg(uint8_t event,
                                    void *pData);
-
+void USER_task_Handler (pzMsg_t *pMsg);
 /*
  * Task creation function for the Project Zero.
  */
