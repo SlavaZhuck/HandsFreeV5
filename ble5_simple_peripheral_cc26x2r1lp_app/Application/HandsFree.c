@@ -8,7 +8,8 @@
 #include "Noise_TRSH.h"
 #include "Uart_commands.h"
 #include "max9860_i2c.h"
-
+#include "I2S/I2SCC26XX.h"
+#include <ti/sysbios/family/arm/m3/Hwi.h>
 
 /* Timer variables ***************************************************/
 GPTimerCC26XX_Params tim_params;
@@ -32,19 +33,51 @@ uint16_t error_counter_packet_send = 0;
 
 uint8_t send_array[DS_STREAM_OUTPUT_LEN];
 
+/* I2S variables START*/
+static void bufRdy_callback(I2SCC26XX_Handle handle, I2SCC26XX_StreamNotification *pStreamNotification);
+
+static int16_t *audio_decoded = NULL;
+static uint8_t *i2sContMgtBuffer = NULL;
+
+static I2SCC26XX_StreamNotification i2sStream;
+static I2SCC26XX_BufferRelease bufferRelease;
+static I2SCC26XX_StreamNotification i2sStream;
+static I2SCC26XX_BufferRequest bufferRequest;
+static I2SCC26XX_Handle i2sHandle = (I2SCC26XX_Handle)&(I2SCC26XX_config);
+static uint8_t  i2sQueueMemory[I2S_TOTAL_QUEUE_MEM_SZ];
+static uint16_t i2sSampleBuffer[I2S_SAMPLE_MEMORY_SZ];
+
+static I2SCC26XX_Params i2sParams =
+{
+    .requestMode            = I2SCC26XX_CALLBACK_MODE,
+    .ui32requestTimeout     = BIOS_WAIT_FOREVER,
+    .callbackFxn            = bufRdy_callback,
+    .blockSize              = I2S_SAMP_PER_FRAME,
+    .pvContBuffer           = (void *)i2sSampleBuffer,
+    .ui32conBufTotalSize    = (sizeof(int16_t) * I2S_SAMPLE_MEMORY_SZ),
+    .pvContMgtBuffer        = (void *)i2sQueueMemory,
+    .ui32conMgtBufTotalSize = I2S_TOTAL_QUEUE_MEM_SZ,
+    .currentStream          = &i2sStream
+};
+
+uint8_t packet_data[TRANSMIT_DATA_LENGTH];
+int16_t raw_data_received[I2S_SAMP_PER_FRAME];
+int16_t mic_data_1ch[I2S_SAMP_PER_FRAME];
+
+
+bool gotBufferIn = false;
+bool gotBufferInOut = false;
+bool gotBufferOut = false;
+static void AudioDuplex_enableCache();
+static void AudioDuplex_disableCache();
+
+/* I2S variables END*/
+
 
 void start_voice_handle(void)
 {
-//    pzSendParamReq_t *req =
-//        (pzSendParamReq_t *)ICall_malloc(sizeof(pzSendParamReq_t));
-//    if(req)
-//    {
-//        req->connHandle = (uint16_t)0;
-//        if(ProjectZero_enqueueMsg(PZ_SEND_PARAM_UPD_EVT, req) != SUCCESS)
-//        {
-//          ICall_free(req);
-//        }
-//    }
+    max9860_I2C_Shutdown_state(0);//disable shutdown_mode
+    I2SCC26XX_startStream(i2sHandle);
     stream_on = 1;
     PIN_setOutputValue(ledPinHandle, Board_PIN_GLED, 1);
     GPTimerCC26XX_start(samp_tim_hdl);
@@ -53,6 +86,14 @@ void start_voice_handle(void)
 
 void stop_voice_handle(void)
 {
+    max9860_I2C_Shutdown_state(1);//enable shutdown_mode
+    if(stream_on)
+    {
+        if(!I2SCC26XX_stopStream(i2sHandle))
+        {
+           while(1);
+        }
+    }
     GPTimerCC26XX_stop(samp_tim_hdl);
     stream_on = 0;
 }
@@ -82,6 +123,33 @@ void HandsFree_init (void)
     }
     GPTimerCC26XX_setLoadValue(samp_tim_hdl, (GPTimerCC26XX_Value)SAMP_TIME);
     GPTimerCC26XX_registerInterrupt(samp_tim_hdl, samp_timer_callback, GPT_INT_TIMEOUT);
+    I2SCC26XX_init(i2sHandle);
+    I2SCC26XX_Handle i2sHandleTmp = NULL;
+    AudioDuplex_disableCache();
+
+//    i2sContMgtBuffer = (uint8_t *)(I2S_MEM_BASE + I2S_BUF + 1);
+//    audio_decoded = (int16_t *)I2S_MEM_BASE;
+    // Setup I2S Params
+//    i2sParams.blockSize              = I2S_SAMP_PER_FRAME;
+//    i2sParams.pvContBuffer           = (void *) audio_decoded;
+//    i2sParams.pvContMgtBuffer        = (void *) i2sContMgtBuffer;
+//    i2sParams.ui32conMgtBufTotalSize =  I2S_BLOCK_OVERHEAD_IN_BYTES *  \
+//                                        I2SCC26XX_QUEUE_SIZE\
+//                                        * 2;
+//
+//    i2sParams.ui32conBufTotalSize    =  sizeof(int16_t) * (I2S_SAMP_PER_FRAME * \
+//                                        I2SCC26XX_QUEUE_SIZE \
+//                                        * NUM_OF_CHANNELS);
+    // Reset I2S handle and attempt to open
+    i2sHandle = (I2SCC26XX_Handle)&(I2SCC26XX_config);
+    i2sHandleTmp = I2SCC26XX_open(i2sHandle, &i2sParams);
+
+    if(!i2sHandleTmp)
+    {
+        while(1);
+    }
+    ProjectZero_enqueueMsg(PZ_I2C_Read_status_EVT, NULL);
+
 }
 
 void blink_timer_callback(GPTimerCC26XX_Handle handle, GPTimerCC26XX_IntMask interruptMask)
@@ -113,7 +181,7 @@ void blink_timer_callback(GPTimerCC26XX_Handle handle, GPTimerCC26XX_IntMask int
 
 void samp_timer_callback(GPTimerCC26XX_Handle handle, GPTimerCC26XX_IntMask interruptMask)
 {
-
+    ProjectZero_enqueueMsg(PZ_I2C_Read_status_EVT, NULL);
     if(stream_on)
     {
         ProjectZero_enqueueMsg(PZ_SEND_PACKET_EVT, NULL);
@@ -154,6 +222,21 @@ void USER_task_Handler (pzMsg_t *pMsg)
             }
             break;
         case PZ_SEND_PACKET_EVT:
+            bufferRequest.buffersRequested = I2SCC26XX_BUFFER_IN_AND_OUT;
+
+            gotBufferInOut = I2SCC26XX_requestBuffer(i2sHandle, &bufferRequest);
+
+            if (gotBufferInOut)
+            {
+                memcpy(bufferRequest.bufferOut, raw_data_received, sizeof(raw_data_received));
+                memcpy(mic_data_1ch, bufferRequest.bufferIn, sizeof(mic_data_1ch));
+
+                bufferRelease.bufferHandleOut = bufferRequest.bufferHandleOut;
+                bufferRelease.bufferHandleIn = bufferRequest.bufferHandleIn;
+                I2SCC26XX_releaseBuffer(i2sHandle, &bufferRelease);
+                gotBufferInOut = 0;
+                i2c_read_delay++;
+            }
 
             send_array[DS_STREAM_OUTPUT_LEN - 4] = counter_packet_send >> 24;
             send_array[DS_STREAM_OUTPUT_LEN - 3] = counter_packet_send >> 16;
@@ -183,7 +266,6 @@ void USER_task_Handler (pzMsg_t *pMsg)
         default:
             break;
       }
-
 }
 
 
@@ -265,4 +347,55 @@ void ProjectZero_DataService_ValueChangeHandler(
     default:
         return;
     }
+}
+
+static void bufRdy_callback(I2SCC26XX_Handle handle, I2SCC26XX_StreamNotification *pStreamNotification)
+{
+    I2SCC26XX_Status streamStatus = pStreamNotification->status;
+
+    if (streamStatus == I2SCC26XX_STREAM_BUFFER_READY || streamStatus == I2SCC26XX_STREAM_BUFFER_READY_BUT_NO_AVAILABLE_BUFFERS)
+    {
+//        gotBufferOut = true;
+//        gotBufferIn = true;
+//        gotBufferInOut = true;
+
+    }
+}
+
+/*********************************************************************
+ * @fn      AudioDuplex_disableCache
+ *
+ * @brief   Disables the instruction cache and sets power constaints
+ *          This prevents the device from sleeping while streaming
+ *
+ * @param   None.
+ *
+ * @return  None.
+ */
+static void AudioDuplex_disableCache()
+{
+    uint_least16_t hwiKey = Hwi_disable();
+    Power_setConstraint(PowerCC26XX_SB_VIMS_CACHE_RETAIN);
+    Power_setConstraint(PowerCC26XX_NEED_FLASH_IN_IDLE);
+    VIMSModeSafeSet(VIMS_BASE, VIMS_MODE_DISABLED, true);
+    Hwi_restore(hwiKey);
+}
+
+/*********************************************************************
+ * @fn      AudioDuplex_enableCache
+ *
+ * @brief   Enables the instruction cache and releases power constaints
+ *          Allows device to sleep again
+ *
+ * @param   None.
+ *
+ * @return  None.
+ */
+static void AudioDuplex_enableCache()
+{
+    uint_least16_t hwiKey = Hwi_disable();
+    Power_releaseConstraint(PowerCC26XX_SB_VIMS_CACHE_RETAIN);
+    Power_releaseConstraint(PowerCC26XX_NEED_FLASH_IN_IDLE);
+    VIMSModeSafeSet(VIMS_BASE, VIMS_MODE_ENABLED, true);
+    Hwi_restore(hwiKey);
 }

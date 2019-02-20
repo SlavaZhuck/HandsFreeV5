@@ -12,6 +12,7 @@
 #include "./services/data_service.h"
 #include "max9860_i2c.h"
 #include <ti/drivers/timer/GPTimerCC26XX.h>
+#include <ti/sysbios/BIOS.h>
 
 #define TMR_PERIOD                          (48000000UL)
 #define LOW_STATE_TIME                      ((TMR_PERIOD / 10) * 9)
@@ -21,6 +22,35 @@
 #define SAMP_TIME                         (TMR_PERIOD * (SAMP_PERIOD / 1000.0f) - 1)
 //#define SAMP_TIME                          (4799999/4)
 #define TRANSMIT_DATA_LENGTH                47
+
+/******I2S Start ******/
+//#define I2S_MEM_BASE                        (GPRAM_BASE + FlashSectorSizeGet())
+
+
+#define I2S_SAMP_PER_FRAME                  80
+
+//#define NUM_OF_CHANNELS                     2
+//#define I2S_BUF                             sizeof(int16_t) * (I2S_SAMP_PER_FRAME *   \
+//                                            I2SCC26XX_QUEUE_SIZE * NUM_OF_CHANNELS)
+#define NUM_CHAN                        2
+
+/*
+ * Configure for a 10ms frame @ 16kHz sample rate.
+ * Note that the frame size variable is limited to a max size of 255.
+ * It is an 8bit field in hardware (AIFDMACFG).
+ */
+#define FRAME_SIZE                      I2S_SAMP_PER_FRAME
+
+#define I2S_TOTAL_QUEUE_MEM_SZ         (I2S_BLOCK_OVERHEAD_IN_BYTES *           \
+                                        I2SCC26XX_QUEUE_SIZE *                  \
+                                        NUM_CHAN)
+
+#define I2S_SAMPLE_MEMORY_SZ           (FRAME_SIZE *                            \
+                                        I2SCC26XX_QUEUE_SIZE *                  \
+                                        NUM_CHAN)
+
+/******I2S End ******/
+
 
 void start_voice_handle(void);
 void stop_voice_handle(void);

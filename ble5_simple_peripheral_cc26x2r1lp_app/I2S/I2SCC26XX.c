@@ -49,16 +49,26 @@
 
 #include <string.h>
 
-/* driverlib header files */
-#include <inc/hw_memmap.h>
-#include <inc/hw_ints.h>
-#include <inc/hw_types.h>
-#include <driverlib/sys_ctrl.h>
-#include <driverlib/ioc.h>
-#include <driverlib/rom.h>
-#include <driverlib/prcm.h>
-#include <driverlib/i2s.h>
+///* driverlib header files */
+//#include <inc/hw_memmap.h>
+//#include <inc/hw_ints.h>
+//#include <inc/hw_types.h>
+//#include <driverlib/sys_ctrl.h>
+//#include <driverlib/ioc.h>
+//#include <driverlib/rom.h>
+//#include <driverlib/prcm.h>
+//#include <driverlib/i2s.h>
 
+#include <ti/devices/DeviceFamily.h>
+#include DeviceFamily_constructPath(inc/hw_memmap.h)
+#include DeviceFamily_constructPath(inc/hw_ints.h)
+#include DeviceFamily_constructPath(inc/hw_types.h)
+
+#include DeviceFamily_constructPath(driverlib/sys_ctrl.h)
+#include DeviceFamily_constructPath(driverlib/ioc.h)
+#include DeviceFamily_constructPath(driverlib/rom.h)
+#include DeviceFamily_constructPath(driverlib/prcm.h)
+#include DeviceFamily_constructPath(driverlib/i2s.h)
 /* I2SCC26XX functions */
 void            I2SCC26XX_init(I2SCC26XX_Handle handle);
 I2SCC26XX_Handle  I2SCC26XX_open(I2SCC26XX_Handle handle, I2SCC26XX_Params *params);
@@ -629,7 +639,7 @@ static void I2SCC26XX_hwiFxn (UArg arg) {
             object->currentStream->status = I2SCC26XX_STREAM_STOPPED;
         }
         else if (object->currentStream->status != I2SCC26XX_STREAM_STOPPED) {
-            if (/*(dbgCntI2SRelBuf > 4) &&*/ !Queue_empty(i2sBlockAvailOutQueue))
+            if ((dbgCntI2SRelBuf > 4) && !Queue_empty(i2sBlockAvailOutQueue))
             {
                 i2sBlockNextOut = Queue_get(i2sBlockAvailOutQueue);
 #ifdef I2S_DEBUG
@@ -659,7 +669,7 @@ static void I2SCC26XX_hwiFxn (UArg arg) {
             * attempts to perform another I2SCC26XX_bufferRequest call
             */
             notification = object->currentStream;
-           // object->currentStream->arg = shadowQueueNodeTable;
+            object->currentStream->arg = shadowQueueNodeTable;
 
             /* Notify caller about availability of buffer */
             object->callbackFxn((I2SCC26XX_Handle)arg, notification);
