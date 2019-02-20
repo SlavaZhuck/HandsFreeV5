@@ -866,7 +866,7 @@ static void ProjectZero_processGapMessage(gapEventHdr_t *pMsg)
                               0);
             APP_ASSERT(status == SUCCESS);
         }
-        ProjectZero_enqueueMsg(PZ_SEND_STOP_STREAM_EVT, NULL);
+        //ProjectZero_enqueueMsg(PZ_SEND_STOP_STREAM_EVT, NULL);
         break;
     }
 
@@ -881,7 +881,7 @@ static void ProjectZero_processGapMessage(gapEventHdr_t *pMsg)
 
         if(pPkt->hdr.status == SUCCESS)
         {
-
+            ProjectZero_enqueueMsg(PZ_SEND_STOP_STREAM_EVT, NULL);
             //stop_voice_handle();
             // Add connection to list
             ProjectZero_addConn(pPkt->connectionHandle);
@@ -895,17 +895,22 @@ static void ProjectZero_processGapMessage(gapEventHdr_t *pMsg)
                       (uintptr_t)addrStr);
         }
 
-        if(linkDB_NumActive() < MAX_NUM_BLE_CONNS)
-        {
-            // Start advertising since there is room for more connections
-            GapAdv_enable(advHandleLegacy, GAP_ADV_ENABLE_OPTIONS_USE_MAX, 0);
-        }
+//        if(linkDB_NumActive() < MAX_NUM_BLE_CONNS)
+//        {
+//            // Start advertising since there is room for more connections
+//            GapAdv_enable(advHandleLegacy, GAP_ADV_ENABLE_OPTIONS_USE_MAX, 0);
+//        }
     }
     break;
 
     case GAP_LINK_TERMINATED_EVENT:
     {
-        ProjectZero_enqueueMsg(PZ_SEND_STOP_STREAM_EVT, NULL);
+        if(stream_on == 1)
+        {
+            //GAPRole_SendUpdateParam(8, 8, 0, TIMEOUT, GAPROLE_RESEND_PARAM_UPDATE);
+            ProjectZero_enqueueMsg(PZ_SEND_STOP_STREAM_EVT, NULL);
+        }
+
         //stop_voice_handle();
         gapTerminateLinkEvent_t *pPkt = (gapTerminateLinkEvent_t *)pMsg;
 
@@ -915,10 +920,7 @@ static void ProjectZero_processGapMessage(gapEventHdr_t *pMsg)
 
         // Remove the connection from the list and disable RSSI if needed
         ProjectZero_removeConn(pPkt->connectionHandle);
-
-        // Cancel the OAD if one is going on
-        // A disconnect forces the peer to re-identify
-//        OAD_cancel();
+        ProjectZero_enqueueMsg(PZ_START_ADV_EVT, NULL);
     }
     break;
 
@@ -1057,7 +1059,7 @@ static void ProjectZero_processAdvEvent(pzGapAdvEventData_t *pEventData)
      * connection establishment */
     case GAP_EVT_ADV_SET_TERMINATED:
     {
-//        GapAdv_setTerm_t *advSetTerm = (GapAdv_setTerm_t *)(pEventData->pBuf);
+        GapAdv_setTerm_t *advSetTerm = (GapAdv_setTerm_t *)(pEventData->pBuf);
 //
 //        Log_info2("Adv Set %d disabled after conn %d",
 //                  advSetTerm->handle, advSetTerm->connHandle);

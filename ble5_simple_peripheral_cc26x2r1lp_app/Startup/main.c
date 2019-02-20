@@ -72,7 +72,7 @@
 // BLE user defined configuration
 icall_userCfg_t user0Cfg = BLE_USER_CFG;
 #endif // USE_DEFAULT_USER_CFG
-
+#include "Board.h"
 #include <ti/display/Display.h>
 
 /*******************************************************************************

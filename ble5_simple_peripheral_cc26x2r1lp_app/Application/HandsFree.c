@@ -95,6 +95,7 @@ void stop_voice_handle(void)
         }
     }
     GPTimerCC26XX_stop(samp_tim_hdl);
+    PIN_setOutputValue(ledPinHandle, Board_PIN_GLED, 0);
     stream_on = 0;
 }
 
@@ -127,19 +128,6 @@ void HandsFree_init (void)
     I2SCC26XX_Handle i2sHandleTmp = NULL;
     AudioDuplex_disableCache();
 
-//    i2sContMgtBuffer = (uint8_t *)(I2S_MEM_BASE + I2S_BUF + 1);
-//    audio_decoded = (int16_t *)I2S_MEM_BASE;
-    // Setup I2S Params
-//    i2sParams.blockSize              = I2S_SAMP_PER_FRAME;
-//    i2sParams.pvContBuffer           = (void *) audio_decoded;
-//    i2sParams.pvContMgtBuffer        = (void *) i2sContMgtBuffer;
-//    i2sParams.ui32conMgtBufTotalSize =  I2S_BLOCK_OVERHEAD_IN_BYTES *  \
-//                                        I2SCC26XX_QUEUE_SIZE\
-//                                        * 2;
-//
-//    i2sParams.ui32conBufTotalSize    =  sizeof(int16_t) * (I2S_SAMP_PER_FRAME * \
-//                                        I2SCC26XX_QUEUE_SIZE \
-//                                        * NUM_OF_CHANNELS);
     // Reset I2S handle and attempt to open
     i2sHandle = (I2SCC26XX_Handle)&(I2SCC26XX_config);
     i2sHandleTmp = I2SCC26XX_open(i2sHandle, &i2sParams);
@@ -181,7 +169,6 @@ void blink_timer_callback(GPTimerCC26XX_Handle handle, GPTimerCC26XX_IntMask int
 
 void samp_timer_callback(GPTimerCC26XX_Handle handle, GPTimerCC26XX_IntMask interruptMask)
 {
-    ProjectZero_enqueueMsg(PZ_I2C_Read_status_EVT, NULL);
     if(stream_on)
     {
         ProjectZero_enqueueMsg(PZ_SEND_PACKET_EVT, NULL);
@@ -260,7 +247,6 @@ void USER_task_Handler (pzMsg_t *pMsg)
             break;
         case PZ_SEND_STOP_STREAM_EVT:
             stop_voice_handle();
-            ProjectZero_enqueueMsg(PZ_START_ADV_EVT, NULL);
             break;
 
         default:
@@ -292,12 +278,12 @@ void ProjectZero_DataService_CfgChangeHandler(pzCharacteristicData_t *pCharData)
             if(stream_on != 1)
             {
                 //GAPRole_SendUpdateParam(8, 8, 0, TIMEOUT, GAPROLE_RESEND_PARAM_UPDATE);
-                start_voice_handle();
+                ProjectZero_enqueueMsg(PZ_SEND_START_STREAM_EVT, NULL);
             }
         }
         else
         {
-            stop_voice_handle();
+            ProjectZero_enqueueMsg(PZ_SEND_STOP_STREAM_EVT, NULL);
         }
         break;
     }
