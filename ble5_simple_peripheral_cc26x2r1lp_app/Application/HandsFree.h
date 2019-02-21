@@ -22,7 +22,10 @@
 #define SAMP_TIME                         (TMR_PERIOD * (SAMP_PERIOD / 1000.0f) - 1)
 //#define SAMP_TIME                          (4799999/4)
 #define TRANSMIT_DATA_LENGTH                47
+#define V_STREAM_OUTPUT_SOUND_LEN                (TRANSMIT_DATA_LENGTH - 7)
 
+
+#define MAILBOX_DEPTH       10
 /******I2S Start ******/
 //#define I2S_MEM_BASE                        (GPRAM_BASE + FlashSectorSizeGet())
 

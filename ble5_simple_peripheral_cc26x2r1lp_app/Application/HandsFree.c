@@ -10,6 +10,8 @@
 #include "max9860_i2c.h"
 #include "I2S/I2SCC26XX.h"
 #include <ti/sysbios/family/arm/m3/Hwi.h>
+#include "codec/SitADPCM.h"
+#include <ti/sysbios/knl/Mailbox.h>
 
 /* Timer variables ***************************************************/
 GPTimerCC26XX_Params tim_params;
@@ -36,8 +38,6 @@ uint8_t send_array[DS_STREAM_OUTPUT_LEN];
 /* I2S variables START*/
 static void bufRdy_callback(I2SCC26XX_Handle handle, I2SCC26XX_StreamNotification *pStreamNotification);
 
-static int16_t *audio_decoded = NULL;
-static uint8_t *i2sContMgtBuffer = NULL;
 
 static I2SCC26XX_StreamNotification i2sStream;
 static I2SCC26XX_BufferRelease bufferRelease;
@@ -72,7 +72,13 @@ static void AudioDuplex_enableCache();
 static void AudioDuplex_disableCache();
 
 /* I2S variables END*/
+static Mailbox_Handle mailbox;
+static uint8_t mailpost_usage;
+/* codec */
 
+
+static struct ADPCMstate encoder_adpcm, decoder_adpcm;
+/* codec end */
 
 void start_voice_handle(void)
 {
@@ -97,6 +103,15 @@ void stop_voice_handle(void)
     GPTimerCC26XX_stop(samp_tim_hdl);
     PIN_setOutputValue(ledPinHandle, Board_PIN_GLED, 0);
     stream_on = 0;
+    while(mailpost_usage > 0)
+    {
+        Mailbox_pend(mailbox, packet_data, BIOS_NO_WAIT);
+        mailpost_usage = Mailbox_getNumPendingMsgs(mailbox);
+    }
+
+    memset ( packet_data,   0, sizeof(packet_data) );
+    memset ( raw_data_received, 0, sizeof(raw_data_received) );
+    memset ( mic_data_1ch, 0, sizeof(mic_data_1ch));
 }
 
 
@@ -137,7 +152,10 @@ void HandsFree_init (void)
         while(1);
     }
     ProjectZero_enqueueMsg(PZ_I2C_Read_status_EVT, NULL);
-
+    mailbox = Mailbox_create(sizeof(packet_data), MAILBOX_DEPTH, NULL, NULL);
+    if (mailbox == NULL) {
+        while (1);
+    }
 }
 
 void blink_timer_callback(GPTimerCC26XX_Handle handle, GPTimerCC26XX_IntMask interruptMask)
@@ -209,6 +227,23 @@ void USER_task_Handler (pzMsg_t *pMsg)
             }
             break;
         case PZ_SEND_PACKET_EVT:
+            mailpost_usage = Mailbox_getNumPendingMsgs(mailbox);
+            if(mailpost_usage>0)
+            {
+                Mailbox_pend(mailbox, packet_data, BIOS_NO_WAIT);
+                decoder_adpcm.prevsample = ((int16_t)(packet_data[V_STREAM_OUTPUT_SOUND_LEN]) << 8) |
+                        (int16_t)(packet_data[V_STREAM_OUTPUT_SOUND_LEN + 1]);
+
+                decoder_adpcm.previndex = ((int32_t)(packet_data[V_STREAM_OUTPUT_SOUND_LEN + 2]));
+
+
+                ADPCMDecoderBuf2((char*)(packet_data), raw_data_received, &decoder_adpcm);
+            }else{
+                memset ( packet_data,   0, sizeof(packet_data) );
+                memset ( raw_data_received, 0, sizeof(raw_data_received));
+                memset ( mic_data_1ch,  0, sizeof(mic_data_1ch));
+            }
+
             bufferRequest.buffersRequested = I2SCC26XX_BUFFER_IN_AND_OUT;
 
             gotBufferInOut = I2SCC26XX_requestBuffer(i2sHandle, &bufferRequest);
@@ -225,10 +260,20 @@ void USER_task_Handler (pzMsg_t *pMsg)
                 i2c_read_delay++;
             }
 
-            send_array[DS_STREAM_OUTPUT_LEN - 4] = counter_packet_send >> 24;
-            send_array[DS_STREAM_OUTPUT_LEN - 3] = counter_packet_send >> 16;
-            send_array[DS_STREAM_OUTPUT_LEN - 2] = counter_packet_send >> 8;
-            send_array[DS_STREAM_OUTPUT_LEN - 1] = counter_packet_send;
+            uint8_t encode_buf[TRANSMIT_DATA_LENGTH];
+
+            send_array[V_STREAM_OUTPUT_SOUND_LEN] = encoder_adpcm.prevsample >> 8;
+            send_array[V_STREAM_OUTPUT_SOUND_LEN + 1] = encoder_adpcm.prevsample;
+            send_array[V_STREAM_OUTPUT_SOUND_LEN + 2] = encoder_adpcm.previndex;
+
+            //encode_buf[V_STREAM_OUTPUT_LEN - 4] = mailpost_usage;
+            send_array[TRANSMIT_DATA_LENGTH - 4] = counter_packet_send >> 24;
+            send_array[TRANSMIT_DATA_LENGTH - 3] = counter_packet_send >> 16;
+            send_array[TRANSMIT_DATA_LENGTH - 2] = counter_packet_send >> 8;
+            send_array[TRANSMIT_DATA_LENGTH - 1] = counter_packet_send;
+
+             ADPCMEncoderBuf2(mic_data_1ch, (char*)(send_array), &encoder_adpcm);
+
             status = DataService_SetParameter(DS_STREAM_OUTPUT_ID, DS_STREAM_OUTPUT_LEN, send_array);
             if((status != SUCCESS) || (status == 0x15))
             {
@@ -322,7 +367,7 @@ void ProjectZero_DataService_ValueChangeHandler(
         break;
 
     case DS_STREAM_INPUT_ID:
-
+        Mailbox_post(mailbox, pCharData->data, BIOS_NO_WAIT);
         counter_packet_received++;
 
         packet_lost = 100.0f * ((float)counter_packet_send - (float)counter_packet_received) / (float)counter_packet_send;
