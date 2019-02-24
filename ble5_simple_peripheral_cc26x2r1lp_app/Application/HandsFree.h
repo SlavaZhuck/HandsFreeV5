@@ -14,14 +14,16 @@
 #include <ti/drivers/timer/GPTimerCC26XX.h>
 #include <ti/sysbios/BIOS.h>
 
-#define TMR_PERIOD                          (48000000UL)
+#define TMR_PERIOD                          ((48000000UL))
 #define LOW_STATE_TIME                      ((TMR_PERIOD / 10) * 9)
 #define HIGH_STATE_TIME                     (TMR_PERIOD - LOW_STATE_TIME)
 
 #define SAMP_PERIOD                       (10.0f)  //ms
+#define TRANSMIT_DATA_LENGTH              47  //bytes
+
+
 #define SAMP_TIME                         (TMR_PERIOD * (SAMP_PERIOD / 1000.0f) - 1)
 //#define SAMP_TIME                          (4799999/4)
-#define TRANSMIT_DATA_LENGTH                47
 #define V_STREAM_OUTPUT_SOUND_LEN                (TRANSMIT_DATA_LENGTH - 7)
 
 

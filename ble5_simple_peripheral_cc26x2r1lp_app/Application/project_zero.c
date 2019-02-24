@@ -51,7 +51,7 @@
 
 
 #include <project_zero.h>
-#include <util.h>
+
 #include "HandsFree.h"
 
 /*********************************************************************
@@ -135,13 +135,13 @@ static uint8_t scanRspData[] =
 static uint8_t advHandleLegacy;
 
 // Per-handle connection info
-static pzConnRec_t connList[MAX_NUM_BLE_CONNS];
+pzConnRec_t connList[MAX_NUM_BLE_CONNS];
 
 // List to store connection handles for set phy command status's
 static List_List setPhyCommStatList;
 
 // List to store connection handles for queued param updates
-static List_List paramUpdateList;
+List_List paramUpdateList;
 
 /* Pin driver handles */
 PIN_Handle buttonPinHandle;
@@ -184,6 +184,7 @@ static uint8_t button0State = 0;
 static uint8_t button1State = 0;
 
 extern int stream_on;
+bool connection_occured = FALSE;
 /*********************************************************************
  * LOCAL FUNCTIONS
  */
@@ -229,7 +230,7 @@ static void ProjectZero_DataService_CfgChangeCB(uint16_t connHandle,
                                                 uint8_t *pValue);
 
 /* Connection handling functions */
-static uint8_t ProjectZero_getConnIndex(uint16_t connHandle);
+uint8_t ProjectZero_getConnIndex(uint16_t connHandle);
 static uint8_t ProjectZero_clearConnListEntry(uint16_t connHandle);
 static uint8_t ProjectZero_addConn(uint16_t connHandle);
 static uint8_t ProjectZero_removeConn(uint16_t connHandle);
@@ -237,9 +238,8 @@ static void ProjectZero_updatePHYStat(uint16_t eventCode,
                                       uint8_t *pMsg);
 static void ProjectZero_handleUpdateLinkParamReq(
     gapUpdateLinkParamReqEvent_t *pReq);
-static void ProjectZero_sendParamUpdate(uint16_t connHandle);
+
 static void ProjectZero_handleUpdateLinkEvent(gapLinkUpdateEvent_t *pEvt);
-static void ProjectZero_paramUpdClockHandler(UArg arg);
 static void ProjectZero_processConnEvt(Gap_ConnEventRpt_t *pReport);
 static void ProjectZero_connEvtCB(Gap_ConnEventRpt_t *pReport);
 
@@ -481,7 +481,7 @@ static void ProjectZero_init(void)
 
     //Initialize GAP layer for Peripheral role and register to receive GAP events
     GAP_DeviceInit(GAP_PROFILE_PERIPHERAL, selfEntity, ADDRMODE_PUBLIC, NULL);
-
+    L2CAP_RegisterFlowCtrlTask(selfEntity);
     HandsFree_init();
     // Process the Service changed flag
 //    ProjectZero_checkSvcChgndFlag(sendSvcChngdOnNextBoot);
@@ -893,6 +893,12 @@ static void ProjectZero_processGapMessage(gapEventHdr_t *pMsg)
             Log_info1("Connected. Peer address: " \
                         ANSI_COLOR(FG_GREEN)"%s"ANSI_COLOR(ATTR_RESET),
                       (uintptr_t)addrStr);
+            connection_occured = TRUE;
+            /* Warning: This requires -DV41_FEATURES=L2CAP_COC_CFG to be
+             * defined in the build_config.opt of the stack project
+             * If L2CAP CoC is not desired comment the following code out
+             */
+            //GAPBondMgr_ServiceChangeInd(pPkt->connectionHandle, TRUE);
         }
 
 //        if(linkDB_NumActive() < MAX_NUM_BLE_CONNS)
@@ -921,6 +927,7 @@ static void ProjectZero_processGapMessage(gapEventHdr_t *pMsg)
         // Remove the connection from the list and disable RSSI if needed
         ProjectZero_removeConn(pPkt->connectionHandle);
         ProjectZero_enqueueMsg(PZ_START_ADV_EVT, NULL);
+        connection_occured = FALSE;
     }
     break;
 
@@ -1358,7 +1365,7 @@ static uint8_t ProjectZero_addConn(uint16_t connHandle)
             }
 
             // Set default PHY to 1M
-            connList[i].currPhy = HCI_PHY_1_MBPS; // TODO: Is this true, neccessarily?
+            connList[i].currPhy = HCI_PHY_2_MBPS; // TODO: Is this true, neccessarily?
 
             break;
         }
@@ -1377,7 +1384,7 @@ static uint8_t ProjectZero_addConn(uint16_t connHandle)
  * @return  the index of the entry that has the given connection handle.
  *          if there is no match, MAX_NUM_BLE_CONNS will be returned.
  */
-static uint8_t ProjectZero_getConnIndex(uint16_t connHandle)
+uint8_t ProjectZero_getConnIndex(uint16_t connHandle)
 {
     uint8_t i;
 
@@ -1480,7 +1487,7 @@ static uint8_t ProjectZero_removeConn(uint16_t connHandle)
  *
  * @param   connHandle - connection handle
  */
-static void ProjectZero_sendParamUpdate(uint16_t connHandle)
+void ProjectZero_sendParamUpdate(uint16_t connHandle)
 {
     gapUpdateLinkParamReq_t req;
     uint8_t connIndex;
@@ -1849,7 +1856,7 @@ static void ProjectZero_DataService_CfgChangeCB(uint16_t connHandle,
  *
  * @param   arg - app message pointer
  */
-static void ProjectZero_paramUpdClockHandler(UArg arg)
+void ProjectZero_paramUpdClockHandler(UArg arg)
 {
     pzSendParamReq_t *req =
         (pzSendParamReq_t *)ICall_malloc(sizeof(pzSendParamReq_t));

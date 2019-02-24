@@ -59,7 +59,6 @@ extern "C"
 #include <stdint.h>
 #include <ti/sysbios/knl/Queue.h>
 #include <ti/drivers/PIN.h>
-
 #include <bcomdef.h>
 #include <string.h>
 
@@ -72,7 +71,8 @@ extern "C"
 #include <ti/sysbios/knl/Event.h>
 #include <ti/sysbios/knl/Queue.h>
 #include <ti/drivers/utils/List.h>
-
+#include <ti/drivers/utils/List.h>
+//#include <ti/ble5stack/inc/gapbondmgr.h>
 //#include <xdc/runtime/Log.h> // Comment this in to use xdc.runtime.Log
 #include <ti/common/cc26xx/uartlog/UartLog.h>  // Comment out if using xdc Log
 
@@ -85,7 +85,7 @@ extern "C"
 #include <bcomdef.h>
 /* This Header file contains all BLE API and icall structure definition */
 #include <icall_ble_api.h>
-
+#include <util.h>
 /* Bluetooth Profiles */
 #include <devinfoservice.h>
 #include "./services/data_service.h"
@@ -158,7 +158,7 @@ extern "C"
 #define DEFAULT_PARAM_UPDATE_REQ_DECISION     GAP_UPDATE_REQ_ACCEPT_ALL//GAP_UPDATE_REQ_ACCEPT_ALL
 
 // Delay (in ms) after connection establishment before sending a parameter update requst
-#define PZ_SEND_PARAM_UPDATE_DELAY            0
+#define PZ_SEND_PARAM_UPDATE_DELAY            10
 
 
 
@@ -265,6 +265,10 @@ void ProjectZero_DataService_CfgChangeHandler( pzCharacteristicData_t *pCharData
 /* Utility functions */
 status_t ProjectZero_enqueueMsg(uint8_t event,
                                    void *pData);
+void ProjectZero_paramUpdClockHandler(UArg arg);
+void ProjectZero_sendParamUpdate(uint16_t connHandle);
+uint8_t ProjectZero_getConnIndex(uint16_t connHandle);
+
 void USER_task_Handler (pzMsg_t *pMsg);
 /*
  * Task creation function for the Project Zero.

@@ -75,18 +75,42 @@ static void AudioDuplex_disableCache();
 static Mailbox_Handle mailbox;
 static uint8_t mailpost_usage;
 /* codec */
-
-
+extern pzConnRec_t connList[MAX_NUM_BLE_CONNS];
+extern bool connection_occured;
+extern List_List paramUpdateList;
 static struct ADPCMstate encoder_adpcm, decoder_adpcm;
 /* codec end */
 
 void start_voice_handle(void)
 {
+    uint16_t tempcounter = 47999; //1ms delay
     max9860_I2C_Shutdown_state(0);//disable shutdown_mode
+
+    PIN_setOutputValue(ledPinHandle, Board_PIN_GLED, 1);
+    GPTimerCC26XX_setLoadValue(samp_tim_hdl, (GPTimerCC26XX_Value)SAMP_TIME);
+//    pzSendParamReq_t *req =
+//        (pzSendParamReq_t *)ICall_malloc(sizeof(pzSendParamReq_t));
+//    if(req)
+//    {
+//        req->connHandle = (uint16_t)connList[0].connHandle;
+//        if(ProjectZero_enqueueMsg(PZ_SEND_PARAM_UPD_EVT, req) != SUCCESS)
+//        {
+//          ICall_free(req);
+//        }
+//    }
+//    Util_constructClock(connList[0].pUpdateClock,
+//                        ProjectZero_paramUpdClockHandler,
+//                        5000, 0, true,
+//                        (uintptr_t)connList[0].connHandle);
+
+
+//    while(tempcounter>0)
+//     {
+//        tempcounter--;
+//     }
+    GPTimerCC26XX_start(samp_tim_hdl);
     I2SCC26XX_startStream(i2sHandle);
     stream_on = 1;
-    PIN_setOutputValue(ledPinHandle, Board_PIN_GLED, 1);
-    GPTimerCC26XX_start(samp_tim_hdl);
 }
 
 
@@ -266,7 +290,6 @@ void USER_task_Handler (pzMsg_t *pMsg)
             send_array[V_STREAM_OUTPUT_SOUND_LEN + 1] = encoder_adpcm.prevsample;
             send_array[V_STREAM_OUTPUT_SOUND_LEN + 2] = encoder_adpcm.previndex;
 
-            //encode_buf[V_STREAM_OUTPUT_LEN - 4] = mailpost_usage;
             send_array[TRANSMIT_DATA_LENGTH - 4] = counter_packet_send >> 24;
             send_array[TRANSMIT_DATA_LENGTH - 3] = counter_packet_send >> 16;
             send_array[TRANSMIT_DATA_LENGTH - 2] = counter_packet_send >> 8;
@@ -317,18 +340,19 @@ void ProjectZero_DataService_CfgChangeHandler(pzCharacteristicData_t *pCharData)
     switch(pCharData->paramID)
     {
     case DS_STREAM_OUTPUT_ID:
-
-        if (configValue) // 0x0001 and 0x0002 both indicate turned on.
+        if(connection_occured)
         {
-            if(stream_on != 1)
+            if (configValue) // 0x0001 and 0x0002 both indicate turned on.
             {
-                //GAPRole_SendUpdateParam(8, 8, 0, TIMEOUT, GAPROLE_RESEND_PARAM_UPDATE);
-                ProjectZero_enqueueMsg(PZ_SEND_START_STREAM_EVT, NULL);
+                if(stream_on != 1)
+                {
+                    ProjectZero_enqueueMsg(PZ_SEND_START_STREAM_EVT, NULL);
+                }
             }
-        }
-        else
-        {
-            ProjectZero_enqueueMsg(PZ_SEND_STOP_STREAM_EVT, NULL);
+            else
+            {
+                ProjectZero_enqueueMsg(PZ_SEND_STOP_STREAM_EVT, NULL);
+            }
         }
         break;
     }
