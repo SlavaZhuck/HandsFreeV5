@@ -12,6 +12,9 @@
 #include <ti/sysbios/family/arm/m3/Hwi.h>
 #include "codec/SitADPCM.h"
 #include <ti/sysbios/knl/Mailbox.h>
+#include "Uart_Parser.h"
+#include "Uart_commands.h"
+#include "GeneralDef.h"
 
 /* Timer variables ***************************************************/
 GPTimerCC26XX_Params tim_params;
@@ -19,6 +22,35 @@ GPTimerCC26XX_Handle blink_tim_hdl = NULL;
 GPTimerCC26XX_Handle samp_tim_hdl = NULL;
 GPTimerCC26XX_Value load_val[2] = {LOW_STATE_TIME, HIGH_STATE_TIME};
 /*********************************************************************/
+
+
+/******Uart Start ******/
+#ifdef UART_DEBUG
+  #define UART_BAUD_RATE 921600
+#endif
+#ifndef UART_DEBUG
+  #define UART_BAUD_RATE 115200
+#endif
+#define MAX_NUM_RX_BYTES    100   // Maximum RX bytes to receive in one go
+#define MAX_NUM_TX_BYTES    100   // Maximum TX bytes to send in one go
+#define WANTED_RX_BYTES     1     // Maximum TX bytes to send in one go
+
+UART_Handle uart;
+static UART_Params uartParams;
+
+uint8_t macAddress[6];
+static uint32_t wantedRxBytes = WANTED_RX_BYTES;            // Number of bytes received so far
+static uint8_t rxBuf[MAX_NUM_RX_BYTES];   // Receive buffer
+
+#ifdef UART_DEBUG
+//int16_t uart_data_send[I2S_SAMP_PER_FRAME+1];
+int16_t uart_data_send[I2S_SAMP_PER_FRAME*2+1];
+#endif
+
+static void readCallback(UART_Handle handle, void *rxBuf, size_t size);
+static void writeCallback(UART_Handle handle_uart, void *rxBuf, size_t size);
+
+/******Uart End ******/
 
 /* I2C variables *****************************************************/
 static uint16_t i2c_read_delay;
@@ -180,6 +212,40 @@ void HandsFree_init (void)
     if (mailbox == NULL) {
         while (1);
     }
+
+    UART_init();
+    parser_init();
+
+   // UartLog_init(UART_open(Board_UART0, NULL));
+    /* Create a UART with data processing off. */
+    UART_Params_init(&uartParams);
+    uartParams.writeDataMode    = UART_DATA_BINARY;
+    uartParams.readDataMode     = UART_DATA_BINARY;
+    uartParams.readMode         = UART_MODE_CALLBACK;
+    uartParams.writeMode        = UART_MODE_CALLBACK;
+    //uartParams.writeTimeout      = 0; //UART_WAIT_FOREVER
+    uartParams.readCallback     = readCallback;
+    uartParams.writeCallback    = writeCallback;
+    uartParams.readReturnMode   = UART_RETURN_FULL;
+    uartParams.readEcho         = UART_ECHO_OFF;
+    uartParams.baudRate         = UART_BAUD_RATE;
+
+    uart = UART_open(Board_UART0, &uartParams);
+    if (uart == NULL) {
+        /* UART_open() failed */
+        while (1);
+    }
+
+    uint64_t temp = *((uint64_t *)(0x500012E8)) & 0xFFFFFFFFFFFFFF;
+    for(uint8_t i = 0 ; i < 6 ; i++)
+    {
+        macAddress[i]=*(((uint8_t *)&temp)+i);
+    }
+    //macAddress = *((uint64_t *)(0x500012E8)) & 0xFFFFFFFFFFFFFF;
+
+    UART_write(uart, macAddress, sizeof(macAddress));
+    int rxBytes = UART_read(uart, rxBuf, wantedRxBytes);
+
 }
 
 void blink_timer_callback(GPTimerCC26XX_Handle handle, GPTimerCC26XX_IntMask interruptMask)
@@ -282,9 +348,14 @@ void USER_task_Handler (pzMsg_t *pMsg)
                 I2SCC26XX_releaseBuffer(i2sHandle, &bufferRelease);
                 gotBufferInOut = 0;
                 i2c_read_delay++;
-            }
+                #ifdef  UART_DEBUG
+                    memcpy(&uart_data_send[1], mic_data_1ch, sizeof(mic_data_1ch));
+                    memcpy(&uart_data_send[81], raw_data_received, sizeof(raw_data_received));
 
-            uint8_t encode_buf[TRANSMIT_DATA_LENGTH];
+                    uart_data_send[0]= (40u << 8u) + 41u;   //start bytes for MATLAB ")("
+                    UART_write(uart, uart_data_send, sizeof(uart_data_send));
+                #endif
+            }
 
             send_array[V_STREAM_OUTPUT_SOUND_LEN] = encoder_adpcm.prevsample >> 8;
             send_array[V_STREAM_OUTPUT_SOUND_LEN + 1] = encoder_adpcm.prevsample;
@@ -453,4 +524,23 @@ static void AudioDuplex_enableCache()
     Power_releaseConstraint(PowerCC26XX_NEED_FLASH_IN_IDLE);
     VIMSModeSafeSet(VIMS_BASE, VIMS_MODE_ENABLED, true);
     Hwi_restore(hwiKey);
+}
+
+static void writeCallback(UART_Handle handle_uart, void *rxBuf, size_t size)
+{
+//SPPBLEServer_enqueueUARTMsg(SBC_UART_CHANGE_EVT,rxBuf,size);
+}
+
+static void readCallback(UART_Handle handle, void *rxBuf, size_t size)
+{
+ //   memset(&test_CRC,0,sizeof(test_CRC));
+
+    OnRxByte(((unsigned char*)rxBuf)[0]);
+    if(PackProcessing())
+    {
+
+    }
+
+    wantedRxBytes = 1;
+    UART_read(handle, rxBuf, wantedRxBytes);
 }

@@ -1066,7 +1066,7 @@ static void ProjectZero_processAdvEvent(pzGapAdvEventData_t *pEventData)
      * connection establishment */
     case GAP_EVT_ADV_SET_TERMINATED:
     {
-        GapAdv_setTerm_t *advSetTerm = (GapAdv_setTerm_t *)(pEventData->pBuf);
+//        GapAdv_setTerm_t *advSetTerm = (GapAdv_setTerm_t *)(pEventData->pBuf);
 //
 //        Log_info2("Adv Set %d disabled after conn %d",
 //                  advSetTerm->handle, advSetTerm->connHandle);

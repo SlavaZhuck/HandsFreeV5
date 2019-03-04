@@ -427,7 +427,7 @@ const DisplaySharp_HWAttrsV1 displaySharpHWattrs = {
 };
 
 #ifndef BOARD_DISPLAY_USE_UART
-#define BOARD_DISPLAY_USE_UART 1
+#define BOARD_DISPLAY_USE_UART 0
 #endif
 #ifndef BOARD_DISPLAY_USE_UART_ANSI
 #define BOARD_DISPLAY_USE_UART_ANSI 0

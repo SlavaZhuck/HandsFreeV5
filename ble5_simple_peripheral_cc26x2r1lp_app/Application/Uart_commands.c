@@ -55,7 +55,7 @@ void send_fh_cr_tp(void){   //TODO
         send_answer_for_command(REC_ERROR) ;
     }
 }
-extern int16_t batt_voltage[];
+//extern int16_t batt_voltage[];
 
 void get_fh_param(void){
     //readMacfunction TODO
@@ -69,9 +69,9 @@ void get_fh_param(void){
 
 
     //uint16_t voltage = get_bat_voltage();
-    uint16_t voltage = batt_voltage[0];
-    Tx_Data.data[6]= voltage>>8;
-    Tx_Data.data[7]= voltage & 0x00ff;
+    //uint16_t voltage = batt_voltage[0];
+//    Tx_Data.data[6]= voltage>>8;
+//    Tx_Data.data[7]= voltage & 0x00ff;
 
     Tx_Data.command = SEND_FH_PARAM ;
     calcCRC_andSend();
