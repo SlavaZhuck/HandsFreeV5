@@ -15,6 +15,34 @@
 #include "Uart_Parser.h"
 #include "Uart_commands.h"
 #include "GeneralDef.h"
+#include "../G729AnexCe/TYPEDEF.H"
+#include "../G729AnexCe/ld8k.h"
+
+/*g729 codec START*/
+   extern FLOAT *new_speech;           /* Pointer to new speech data   */
+
+   int prm[PRM_SIZE];           /* Transmitted parameters        */
+   INT16 serial[SERIAL_SIZE];   /* Output bit stream buffer      */
+   INT16 sp16[L_FRAME];         /* Buffer to read 16 bits speech */
+   int i;
+   INT32   frame;
+
+   FLOAT  synth_buf[L_FRAME+M];            /* Synthesis                  */
+   FLOAT  *synth;
+   int    parm[PRM_SIZE+1];                /* Synthesis parameters + BFI */
+   INT16  serial[SERIAL_SIZE];             /* Serial stream              */
+   FLOAT  Az_dec[2*MP1], *ptr_Az;          /* Decoded Az for post-filter */
+   int    t0_first;
+   FLOAT  pst_out[L_FRAME];                /* postfilter output          */
+
+   int voicing;                    /* voicing for previous subframe */
+   int sf_voic;                    /* voicing for subframe */
+
+   INT32   frame;
+
+/*g729 codec END */
+
+
 
 /* Timer variables ***************************************************/
 GPTimerCC26XX_Params tim_params;
@@ -112,6 +140,14 @@ extern bool connection_occured;
 extern List_List paramUpdateList;
 static struct ADPCMstate encoder_adpcm, decoder_adpcm;
 /* codec end */
+
+/*Debug variables START*/
+GPTimerCC26XX_Value timestamp_start;
+GPTimerCC26XX_Value timestamp_stop;
+GPTimerCC26XX_Value timestamp_encode_dif;
+GPTimerCC26XX_Value timestamp_decode_dif;
+/*Debug variables END*/
+
 
 void start_voice_handle(void)
 {
@@ -245,6 +281,72 @@ void HandsFree_init (void)
 
     UART_write(uart, macAddress, sizeof(macAddress));
     int rxBytes = UART_read(uart, rxBuf, wantedRxBytes);
+    /*-----------------------------------------------------------------*
+     *           Initialization of decoder                             *
+     *-----------------------------------------------------------------*/
+    GPTimerCC26XX_start(samp_tim_hdl);
+    for (i=0; i<M; i++) synth_buf[i] = (F)0.0;
+    synth = synth_buf + M;
+
+    init_decod_ld8k();
+    init_post_filter();
+    init_post_process();
+    voicing = 60;
+
+    /*-------------------------------------------------*
+    * Initialization of the coder.                    *
+    *-------------------------------------------------*/
+
+    init_pre_process();
+    init_coder_ld8k();           /* Initialize the coder             */
+    frame=0;
+
+    frame++;
+
+    for (i = 0; i < L_FRAME; i++)
+    {
+        new_speech[i] = (FLOAT) (L_FRAME - i);
+    }
+
+    timestamp_start =  GPTimerCC26XX_getValue(samp_tim_hdl);
+    pre_process( new_speech, L_FRAME);
+    coder_ld8k(prm);
+    prm2bits_ld8k(prm, serial);
+    timestamp_stop =  GPTimerCC26XX_getValue(samp_tim_hdl);
+    timestamp_encode_dif = timestamp_stop - timestamp_start;
+
+
+    /*DECODE*/
+    GPTimerCC26XX_setLoadValue(samp_tim_hdl, (GPTimerCC26XX_Value)SAMP_TIME);
+    timestamp_start =  GPTimerCC26XX_getValue(samp_tim_hdl);
+    bits2prm_ld8k( &serial[2], &parm[1]);
+
+    /* the hardware detects frame erasures by checking if all bits
+       are set to zero
+    */
+    parm[0] = 0;           /* No frame erasure */
+    for (i=0; i < PRM_SIZE; i++)
+       parm[i+1] = prm[i]; /* frame erased     */
+
+    /* check parity and put 1 in parm[4] if parity error */
+
+//    parm[4] = check_parity_pitch(parm[3], parm[4] );
+
+    decod_ld8k(parm, voicing, synth, Az_dec, &t0_first);  /* Decoder */
+
+    /* Post-filter and decision on voicing parameter */
+    voicing = 0;
+    ptr_Az = Az_dec;
+    for(i=0; i<L_FRAME; i+=L_SUBFR) {
+      post(t0_first, &synth[i], ptr_Az, &pst_out[i], &sf_voic);
+      if (sf_voic != 0) { voicing = sf_voic;}
+      ptr_Az += MP1;
+    }
+    copy(&synth_buf[L_FRAME], &synth_buf[0], M);
+
+    post_process(pst_out, L_FRAME);
+    timestamp_stop =  GPTimerCC26XX_getValue(samp_tim_hdl);
+    timestamp_decode_dif = timestamp_stop - timestamp_start;
 
 }
 
@@ -326,8 +428,11 @@ void USER_task_Handler (pzMsg_t *pMsg)
 
                 decoder_adpcm.previndex = ((int32_t)(packet_data[V_STREAM_OUTPUT_SOUND_LEN + 2]));
 
-
+                timestamp_start =  GPTimerCC26XX_getValue(samp_tim_hdl);
                 ADPCMDecoderBuf2((char*)(packet_data), raw_data_received, &decoder_adpcm);
+                timestamp_stop =  GPTimerCC26XX_getValue(samp_tim_hdl);
+                timestamp_decode_dif = timestamp_stop - timestamp_start;
+
             }else{
                 memset ( packet_data,   0, sizeof(packet_data) );
                 memset ( raw_data_received, 0, sizeof(raw_data_received));
@@ -366,7 +471,10 @@ void USER_task_Handler (pzMsg_t *pMsg)
             send_array[TRANSMIT_DATA_LENGTH - 2] = counter_packet_send >> 8;
             send_array[TRANSMIT_DATA_LENGTH - 1] = counter_packet_send;
 
-             ADPCMEncoderBuf2(mic_data_1ch, (char*)(send_array), &encoder_adpcm);
+            timestamp_start =  GPTimerCC26XX_getValue(samp_tim_hdl);
+            ADPCMEncoderBuf2(mic_data_1ch, (char*)(send_array), &encoder_adpcm);
+            timestamp_stop =  GPTimerCC26XX_getValue(samp_tim_hdl);
+            timestamp_encode_dif = timestamp_stop - timestamp_start;
 
             status = DataService_SetParameter(DS_STREAM_OUTPUT_ID, DS_STREAM_OUTPUT_LEN, send_array);
             if((status != SUCCESS) || (status == 0x15))
