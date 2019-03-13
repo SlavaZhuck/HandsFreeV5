@@ -8,6 +8,6 @@
 #ifndef STARTUP_GENERALDEF_H_
 #define STARTUP_GENERALDEF_H_
 
-#define UART_DEBUG
+//#define UART_DEBUG
 
 #endif /* STARTUP_GENERALDEF_H_ */
