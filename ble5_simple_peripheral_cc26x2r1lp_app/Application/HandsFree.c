@@ -15,6 +15,24 @@
 #include "Uart_Parser.h"
 #include "Uart_commands.h"
 #include "GeneralDef.h"
+#include "g728.h"
+
+/*START CODEC*/
+Short ix; /* index */
+Short s[I2S_SAMP_PER_FRAME]; /* 16-bit speech vector*/
+
+Float f[I2S_SAMP_PER_FRAME]; /* Float speech vector */
+G728EncData e; /* encode state */
+G728DecData d; /* decode state */
+
+/*END CODEC*/
+
+/*Debug variables START*/
+GPTimerCC26XX_Value timestamp_start;
+GPTimerCC26XX_Value timestamp_stop;
+GPTimerCC26XX_Value timestamp_encode_dif;
+GPTimerCC26XX_Value timestamp_decode_dif;
+/*Debug variables END*/
 
 /* Timer variables ***************************************************/
 GPTimerCC26XX_Params tim_params;
@@ -246,6 +264,10 @@ void HandsFree_init (void)
     UART_write(uart, macAddress, sizeof(macAddress));
     int rxBytes = UART_read(uart, rxBuf, wantedRxBytes);
 
+
+    g728encinit(&e); /* initialize encoder state */
+    g728decinit(&d); /* initialize decoder state */
+
 }
 
 void blink_timer_callback(GPTimerCC26XX_Handle handle, GPTimerCC26XX_IntMask interruptMask)
@@ -321,13 +343,19 @@ void USER_task_Handler (pzMsg_t *pMsg)
             if(mailpost_usage>0)
             {
                 Mailbox_pend(mailbox, packet_data, BIOS_NO_WAIT);
-                decoder_adpcm.prevsample = ((int16_t)(packet_data[V_STREAM_OUTPUT_SOUND_LEN]) << 8) |
-                        (int16_t)(packet_data[V_STREAM_OUTPUT_SOUND_LEN + 1]);
+//                decoder_adpcm.prevsample = ((int16_t)(packet_data[V_STREAM_OUTPUT_SOUND_LEN]) << 8) |
+//                        (int16_t)(packet_data[V_STREAM_OUTPUT_SOUND_LEN + 1]);
+//
+//                decoder_adpcm.previndex = ((int32_t)(packet_data[V_STREAM_OUTPUT_SOUND_LEN + 2]));
+//
+//
+//                ADPCMDecoderBuf2((char*)(packet_data), raw_data_received, &decoder_adpcm);
+                timestamp_start =  GPTimerCC26XX_getValue(samp_tim_hdl);
+                g728decode(f, packet_data[0], I2S_SAMP_PER_FRAME, &d); /* decode */
+                g728_cpyr2i(f, I2S_SAMP_PER_FRAME, raw_data_received); /* convert to Short */
 
-                decoder_adpcm.previndex = ((int32_t)(packet_data[V_STREAM_OUTPUT_SOUND_LEN + 2]));
-
-
-                ADPCMDecoderBuf2((char*)(packet_data), raw_data_received, &decoder_adpcm);
+                timestamp_stop =  GPTimerCC26XX_getValue(samp_tim_hdl);
+                timestamp_decode_dif = timestamp_stop - timestamp_start;
             }else{
                 memset ( packet_data,   0, sizeof(packet_data) );
                 memset ( raw_data_received, 0, sizeof(raw_data_received));
@@ -357,17 +385,23 @@ void USER_task_Handler (pzMsg_t *pMsg)
                 #endif
             }
 
-            send_array[V_STREAM_OUTPUT_SOUND_LEN] = encoder_adpcm.prevsample >> 8;
-            send_array[V_STREAM_OUTPUT_SOUND_LEN + 1] = encoder_adpcm.prevsample;
-            send_array[V_STREAM_OUTPUT_SOUND_LEN + 2] = encoder_adpcm.previndex;
+//            send_array[V_STREAM_OUTPUT_SOUND_LEN] = encoder_adpcm.prevsample >> 8;
+//            send_array[V_STREAM_OUTPUT_SOUND_LEN + 1] = encoder_adpcm.prevsample;
+//            send_array[V_STREAM_OUTPUT_SOUND_LEN + 2] = encoder_adpcm.previndex;
 
             send_array[TRANSMIT_DATA_LENGTH - 4] = counter_packet_send >> 24;
             send_array[TRANSMIT_DATA_LENGTH - 3] = counter_packet_send >> 16;
             send_array[TRANSMIT_DATA_LENGTH - 2] = counter_packet_send >> 8;
             send_array[TRANSMIT_DATA_LENGTH - 1] = counter_packet_send;
 
-             ADPCMEncoderBuf2(mic_data_1ch, (char*)(send_array), &encoder_adpcm);
+//             ADPCMEncoderBuf2(mic_data_1ch, (char*)(send_array), &encoder_adpcm);
+            timestamp_start =  GPTimerCC26XX_getValue(samp_tim_hdl);
 
+            g728_cpyi2r(mic_data_1ch, I2S_SAMP_PER_FRAME, f); /* convert Short to Float */
+            g728encode(&send_array, f, I2S_SAMP_PER_FRAME, &e); /* encode */
+
+            timestamp_stop =  GPTimerCC26XX_getValue(samp_tim_hdl);
+            timestamp_encode_dif = timestamp_stop - timestamp_start;
             status = DataService_SetParameter(DS_STREAM_OUTPUT_ID, DS_STREAM_OUTPUT_LEN, send_array);
             if((status != SUCCESS) || (status == 0x15))
             {
