@@ -18,7 +18,7 @@
 #define LOW_STATE_TIME                      ((TMR_PERIOD / 10) * 9)
 #define HIGH_STATE_TIME                     (TMR_PERIOD - LOW_STATE_TIME)
 
-#define SAMP_PERIOD                       (100.0f)  //ms
+#define SAMP_PERIOD                       (50.0f)  //ms
 #define TRANSMIT_DATA_LENGTH              47  //bytes
 
 

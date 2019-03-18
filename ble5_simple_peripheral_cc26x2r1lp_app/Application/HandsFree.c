@@ -351,7 +351,7 @@ void USER_task_Handler (pzMsg_t *pMsg)
 //
 //                ADPCMDecoderBuf2((char*)(packet_data), raw_data_received, &decoder_adpcm);
                 timestamp_start =  GPTimerCC26XX_getValue(samp_tim_hdl);
-                g728decode(f, packet_data[0], I2S_SAMP_PER_FRAME, &d); /* decode */
+                g728decode(f, (int16_t *)packet_data[0], I2S_SAMP_PER_FRAME, &d); /* decode */
                 g728_cpyr2i(f, I2S_SAMP_PER_FRAME, raw_data_received); /* convert to Short */
 
                 timestamp_stop =  GPTimerCC26XX_getValue(samp_tim_hdl);
@@ -398,7 +398,7 @@ void USER_task_Handler (pzMsg_t *pMsg)
             timestamp_start =  GPTimerCC26XX_getValue(samp_tim_hdl);
 
             g728_cpyi2r(mic_data_1ch, I2S_SAMP_PER_FRAME, f); /* convert Short to Float */
-            g728encode(&send_array, f, I2S_SAMP_PER_FRAME, &e); /* encode */
+            g728encode((int16_t *)(&send_array), f, I2S_SAMP_PER_FRAME, &e); /* encode */
 
             timestamp_stop =  GPTimerCC26XX_getValue(samp_tim_hdl);
             timestamp_encode_dif = timestamp_stop - timestamp_start;
