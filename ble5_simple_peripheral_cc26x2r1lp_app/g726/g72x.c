@@ -142,7 +142,7 @@ g726_init_state(
  *
  */
 int
-predictor_zero(
+predictor_zero_g726(
 	g726_state *state_ptr)
 {
 	int		i;
@@ -160,7 +160,7 @@ predictor_zero(
  *
  */
 int
-predictor_pole(
+predictor_pole_g726(
 	g726_state *state_ptr)
 {
 	return (fmult(state_ptr->a[1] >> 2, state_ptr->sr[1]) +
@@ -173,7 +173,7 @@ predictor_pole(
  *
  */
 int
-step_size(
+step_size_g726(
 	g726_state *state_ptr)
 {
 	int		y;
@@ -204,7 +204,7 @@ step_size(
  * as a subtraction.
  */
 int
-quantize(
+quantize_g726(
 	int		d,	/* Raw difference signal sample */
 	int		y,	/* Step size multiplier */
 	int	*	table,	/* quantization table */
@@ -255,7 +255,7 @@ quantize(
  * Multiplication is performed in log base 2 domain as addition.
  */
 int
-reconstruct(
+reconstruct_g726(
 	int		sign,	/* 0 for non-negative value */
 	int		dqln,	/* G.72x codeword */
 	int		y)		/* Step size multiplier */
@@ -284,7 +284,7 @@ reconstruct(
  * updates the state variables for each output code
  */
 void
-update(
+update_g726(
 	int		code_size,	/* distinguish 723_40 with others */
 	int		y,		/* quantizer step size */
 	int		wi,		/* scale factor multiplier */
@@ -511,7 +511,7 @@ tandem_adjust_alaw(
 		sr = -1;
 	sp = linear2alaw((sr >> 1) << 3);	/* short to A-law compression */
 	dx = (alaw2linear(sp) >> 2) - se;	/* 16-bit prediction error */
-	id = quantize(dx, y, qtab, sign - 1);
+	id = quantize_g726(dx, y, qtab, sign - 1);
 
 	if (id == i) {			/* no adjustment on sp */
 		return (sp);
@@ -560,7 +560,7 @@ tandem_adjust_ulaw(
 		sr = 0;
 	sp = linear2ulaw(sr << 2);	/* short to u-law compression */
 	dx = (ulaw2linear(sp) >> 2) - se;	/* 16-bit prediction error */
-	id = quantize(dx, y, qtab, sign - 1);
+	id = quantize_g726(dx, y, qtab, sign - 1);
 	if (id == i) {
 		return (sp);
 	} else {

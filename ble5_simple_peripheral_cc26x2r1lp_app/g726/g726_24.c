@@ -118,23 +118,23 @@ g726_24_encoder(
 		return (-1);
 	}
 
-	sezi = predictor_zero(state_ptr);
+	sezi = predictor_zero_g726(state_ptr);
 	sez = sezi >> 1;
-	sei = sezi + predictor_pole(state_ptr);
+	sei = sezi + predictor_pole_g726(state_ptr);
 	se = sei >> 1;			/* se = estimated signal */
 
 	d = sl - se;			/* d = estimation diff. */
 
 	/* quantize prediction difference d */
-	y = step_size(state_ptr);	/* quantizer step size */
-	i = quantize(d, y, qtab_723_24, 3);	/* i = ADPCM code */
-	dq = reconstruct(i & 4, _dqlntab[i], y); /* quantized diff. */
+	y = step_size_g726(state_ptr);	/* quantizer step size */
+	i = quantize_g726(d, y, qtab_723_24, 3);	/* i = ADPCM code */
+	dq = reconstruct_g726(i & 4, _dqlntab[i], y); /* quantized diff. */
 
 	sr = (dq < 0) ? se - (dq & 0x3FFF) : se + dq; /* reconstructed signal */
 
 	dqsez = sr + sez - se;		/* pole prediction diff. */
 
-	update(3, y, _witab[i], _fitab[i], dq, sr, dqsez, state_ptr);
+	update_g726(3, y, _witab[i], _fitab[i], dq, sr, dqsez, state_ptr);
 
 	return (i);
 }
@@ -162,19 +162,19 @@ g726_24_decoder(
 	int		dqsez;
 
 	i &= 0x07;				/* mask to get proper bits */
-	sezi = predictor_zero(state_ptr);
+	sezi = predictor_zero_g726(state_ptr);
 	sez = sezi >> 1;
-	sei = sezi + predictor_pole(state_ptr);
+	sei = sezi + predictor_pole_g726(state_ptr);
 	se = sei >> 1;			/* se = estimated signal */
 
-	y = step_size(state_ptr);	/* adaptive quantizer step size */
-	dq = reconstruct(i & 0x04, _dqlntab[i], y); /* unquantize pred diff */
+	y = step_size_g726(state_ptr);	/* adaptive quantizer step size */
+	dq = reconstruct_g726(i & 0x04, _dqlntab[i], y); /* unquantize pred diff */
 
 	sr = (dq < 0) ? (se - (dq & 0x3FFF)) : (se + dq); /* reconst. signal */
 
 	dqsez = sr - se + sez;			/* pole prediction diff. */
 
-	update(3, y, _witab[i], _fitab[i], dq, sr, dqsez, state_ptr);
+	update_g726(3, y, _witab[i], _fitab[i], dq, sr, dqsez, state_ptr);
 
 	switch (out_coding) {
 	case AUDIO_ENCODING_ALAW:

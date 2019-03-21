@@ -25,9 +25,11 @@ GPTimerCC26XX_Handle samp_tim_hdl = NULL;
 GPTimerCC26XX_Value load_val[2] = {LOW_STATE_TIME, HIGH_STATE_TIME};
 /*********************************************************************/
 
-GPTimerCC26XX_Value timestamp_start;
-GPTimerCC26XX_Value timestamp_stop;
+GPTimerCC26XX_Value timestamp_encode_start;
+GPTimerCC26XX_Value timestamp_encode_stop;
 GPTimerCC26XX_Value timestamp_encode_dif;
+GPTimerCC26XX_Value timestamp_decode_start;
+GPTimerCC26XX_Value timestamp_decode_stop;
 GPTimerCC26XX_Value timestamp_decode_dif;
 /******Uart Start ******/
 #ifdef UART_DEBUG
@@ -326,18 +328,19 @@ void USER_task_Handler (pzMsg_t *pMsg)
             if(mailpost_usage>0)
             {
                 Mailbox_pend(mailbox, packet_data, BIOS_NO_WAIT);
-//                decoder_adpcm.prevsample = ((int16_t)(packet_data[V_STREAM_OUTPUT_SOUND_LEN]) << 8) |
-//                        (int16_t)(packet_data[V_STREAM_OUTPUT_SOUND_LEN + 1]);
-//
-//                decoder_adpcm.previndex = ((int32_t)(packet_data[V_STREAM_OUTPUT_SOUND_LEN + 2]));
-//
-//
-//                ADPCMDecoderBuf2((char*)(packet_data), raw_data_received, &decoder_adpcm);
-                timestamp_start =  GPTimerCC26XX_getValue(samp_tim_hdl);
-                g726_24_decode(&packet_data, &raw_data_received);
 
-                timestamp_stop =  GPTimerCC26XX_getValue(samp_tim_hdl);
-                timestamp_decode_dif = timestamp_stop - timestamp_start;
+                timestamp_decode_start =  GPTimerCC26XX_getValue(samp_tim_hdl);
+                //decoder_adpcm.prevsample = ((int16_t)(packet_data[V_STREAM_OUTPUT_SOUND_LEN]) << 8) |
+                //        (int16_t)(packet_data[V_STREAM_OUTPUT_SOUND_LEN + 1]);
+
+                //decoder_adpcm.previndex = ((int32_t)(packet_data[V_STREAM_OUTPUT_SOUND_LEN + 2]));
+
+
+                //ADPCMDecoderBuf2((char*)(packet_data), raw_data_received, &decoder_adpcm);
+                g726_16_decode(&packet_data, &raw_data_received);
+
+                timestamp_decode_stop =  GPTimerCC26XX_getValue(samp_tim_hdl);
+                timestamp_decode_dif = timestamp_decode_stop - timestamp_decode_start;
             }else{
                 memset ( packet_data,   0, sizeof(packet_data) );
                 memset ( raw_data_received, 0, sizeof(raw_data_received));
@@ -367,21 +370,21 @@ void USER_task_Handler (pzMsg_t *pMsg)
                 #endif
             }
 
-//            send_array[V_STREAM_OUTPUT_SOUND_LEN] = encoder_adpcm.prevsample >> 8;
-//            send_array[V_STREAM_OUTPUT_SOUND_LEN + 1] = encoder_adpcm.prevsample;
-//            send_array[V_STREAM_OUTPUT_SOUND_LEN + 2] = encoder_adpcm.previndex;
+            send_array[V_STREAM_OUTPUT_SOUND_LEN] = encoder_adpcm.prevsample >> 8;
+            send_array[V_STREAM_OUTPUT_SOUND_LEN + 1] = encoder_adpcm.prevsample;
+            send_array[V_STREAM_OUTPUT_SOUND_LEN + 2] = encoder_adpcm.previndex;
 
             send_array[TRANSMIT_DATA_LENGTH - 4] = counter_packet_send >> 24;
             send_array[TRANSMIT_DATA_LENGTH - 3] = counter_packet_send >> 16;
             send_array[TRANSMIT_DATA_LENGTH - 2] = counter_packet_send >> 8;
             send_array[TRANSMIT_DATA_LENGTH - 1] = counter_packet_send;
 
-            timestamp_start =  GPTimerCC26XX_getValue(samp_tim_hdl);
+            timestamp_encode_start =  GPTimerCC26XX_getValue(samp_tim_hdl);
             //ADPCMEncoderBuf2(mic_data_1ch, (char*)(send_array), &encoder_adpcm);
-            g726_24_encode(&mic_data_1ch, &send_array );
+            g726_16_encode(&mic_data_1ch, &send_array );
 
-            timestamp_stop =  GPTimerCC26XX_getValue(samp_tim_hdl);
-            timestamp_encode_dif = timestamp_stop - timestamp_start;
+            timestamp_encode_stop =  GPTimerCC26XX_getValue(samp_tim_hdl);
+            timestamp_encode_dif = timestamp_encode_stop - timestamp_encode_start;
             status = DataService_SetParameter(DS_STREAM_OUTPUT_ID, DS_STREAM_OUTPUT_LEN, send_array);
             if((status != SUCCESS) || (status == 0x15))
             {

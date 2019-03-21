@@ -133,16 +133,16 @@ g726_16_encoder(
 		return (-1);
 	}
 
-	sezi = predictor_zero(state_ptr);
+	sezi = predictor_zero_g726(state_ptr);
 	sez = sezi >> 1;
-	sei = sezi + predictor_pole(state_ptr);
+	sei = sezi + predictor_pole_g726(state_ptr);
 	se = sei >> 1;			/* se = estimated signal */
 
 	d = sl - se;			/* d = estimation diff. */
 
 	/* quantize prediction difference d */
-	y = step_size(state_ptr);	/* quantizer step size */
-	i = quantize(d, y, qtab_723_16, 1);  /* i = ADPCM code */
+	y = step_size_g726(state_ptr);	/* quantizer step size */
+	i = quantize_g726(d, y, qtab_723_16, 1);  /* i = ADPCM code */
 
 	      /* Since quantize() only produces a three level output
 	       * (1, 2, or 3), we must create the fourth one on our own
@@ -151,13 +151,13 @@ g726_16_encoder(
 	  if ((d & 0x8000) == 0)             /* If d > 0, i=3 isn't right... */
 	    i = 0;
 	    
-	dq = reconstruct(i & 2, _dqlntab[i], y); /* quantized diff. */
+	dq = reconstruct_g726(i & 2, _dqlntab[i], y); /* quantized diff. */
 
 	sr = (dq < 0) ? se - (dq & 0x3FFF) : se + dq; /* reconstructed signal */
 
 	dqsez = sr + sez - se;		/* pole prediction diff. */
 
-	update(2, y, _witab[i], _fitab[i], dq, sr, dqsez, state_ptr);
+	update_g726(2, y, _witab[i], _fitab[i], dq, sr, dqsez, state_ptr);
 
 	return (i);
 }
@@ -185,19 +185,19 @@ g726_16_decoder(
 	int		dqsez;
 
 	i &= 0x03;			/* mask to get proper bits */
-	sezi = predictor_zero(state_ptr);
+	sezi = predictor_zero_g726(state_ptr);
 	sez = sezi >> 1;
-	sei = sezi + predictor_pole(state_ptr);
+	sei = sezi + predictor_pole_g726(state_ptr);
 	se = sei >> 1;			/* se = estimated signal */
 
-	y = step_size(state_ptr);	/* adaptive quantizer step size */
-	dq = reconstruct(i & 0x02, _dqlntab[i], y); /* unquantize pred diff */
+	y = step_size_g726(state_ptr);	/* adaptive quantizer step size */
+	dq = reconstruct_g726(i & 0x02, _dqlntab[i], y); /* unquantize pred diff */
 
 	sr = (dq < 0) ? (se - (dq & 0x3FFF)) : (se + dq); /* reconst. signal */
 
 	dqsez = sr - se + sez;			/* pole prediction diff. */
 
-	update(2, y, _witab[i], _fitab[i], dq, sr, dqsez, state_ptr);
+	update_g726(2, y, _witab[i], _fitab[i], dq, sr, dqsez, state_ptr);
 
 	switch (out_coding) {
 	case AUDIO_ENCODING_ALAW:
