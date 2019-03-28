@@ -13,6 +13,7 @@
 #include "max9860_i2c.h"
 #include <ti/drivers/timer/GPTimerCC26XX.h>
 #include <ti/sysbios/BIOS.h>
+#include <GeneralDef.h>
 
 #define TMR_PERIOD                          ((48000000UL))
 #define LOW_STATE_TIME                      ((TMR_PERIOD / 10) * 9)
@@ -32,8 +33,11 @@
 //#define I2S_MEM_BASE                        (GPRAM_BASE + FlashSectorSizeGet())
 
 
-#define I2S_SAMP_PER_FRAME                  80
-
+#ifdef DOUBLE_DATA_RATE
+    #define I2S_SAMP_PER_FRAME                  160
+#else
+    #define I2S_SAMP_PER_FRAME                  80
+#endif
 //#define NUM_OF_CHANNELS                     2
 //#define I2S_BUF                             sizeof(int16_t) * (I2S_SAMP_PER_FRAME *   \
 //                                            I2SCC26XX_QUEUE_SIZE * NUM_OF_CHANNELS)

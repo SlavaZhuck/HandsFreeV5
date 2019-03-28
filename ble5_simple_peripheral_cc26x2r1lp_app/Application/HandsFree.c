@@ -15,7 +15,7 @@
 #include "Uart_Parser.h"
 #include "Uart_commands.h"
 #include "GeneralDef.h"
-#include <g726.h>
+//#include <g726.h>
 
 #define ABS(a) (((a)<0)?-(a):a)
 /* Timer variables ***************************************************/
@@ -31,6 +31,12 @@ GPTimerCC26XX_Value timestamp_encode_dif;
 GPTimerCC26XX_Value timestamp_decode_start;
 GPTimerCC26XX_Value timestamp_decode_stop;
 GPTimerCC26XX_Value timestamp_decode_dif;
+
+#ifdef DOUBLE_DATA_RATE
+  int16_t temp_output[I2S_SAMP_PER_FRAME/2];
+  int16_t extrapolate_buf[I2S_SAMP_PER_FRAME/2];
+#endif
+
 /******Uart Start ******/
 #ifdef UART_DEBUG
   #define UART_BAUD_RATE 921600
@@ -331,13 +337,33 @@ void USER_task_Handler (pzMsg_t *pMsg)
 
                 timestamp_decode_start =  GPTimerCC26XX_getValue(samp_tim_hdl);
                 //decoder_adpcm.prevsample = ((int16_t)(packet_data[V_STREAM_OUTPUT_SOUND_LEN]) << 8) |
-                //        (int16_t)(packet_data[V_STREAM_OUTPUT_SOUND_LEN + 1]);
+               //         (int16_t)(packet_data[V_STREAM_OUTPUT_SOUND_LEN + 1]);
 
-                //decoder_adpcm.previndex = ((int32_t)(packet_data[V_STREAM_OUTPUT_SOUND_LEN + 2]));
+               // decoder_adpcm.previndex = ((int32_t)(packet_data[V_STREAM_OUTPUT_SOUND_LEN + 2]));
 
+#ifdef DOUBLE_DATA_RATE
+                uint8_t j =0;
+                ADPCMDecoderBuf2((char*)(packet_data), extrapolate_buf, &decoder_adpcm);
+                for(uint8_t i = 0 ; i < I2S_SAMP_PER_FRAME ; i+=2)
+                {
+                    raw_data_received[i] = extrapolate_buf[i/2];
+                }
+                for(uint8_t i = 1 ; i < I2S_SAMP_PER_FRAME; i+=2)
+                {
+                    if(i == I2S_SAMP_PER_FRAME-1){
+                        raw_data_received[i] = extrapolate_buf[j];
+                    }
+                    else
+                    {
+                        raw_data_received[i] = (extrapolate_buf[j]+extrapolate_buf[j+1])/2;
+                    }
+                    j++;
+                }
+#else
+                ADPCMDecoderBuf2((char*)(packet_data), raw_data_received, &decoder_adpcm);
+#endif
 
-                //ADPCMDecoderBuf2((char*)(packet_data), raw_data_received, &decoder_adpcm);
-                g726_16_decode(&packet_data, &raw_data_received);
+//                g726_32_decode(&packet_data, &raw_data_received);
 
                 timestamp_decode_stop =  GPTimerCC26XX_getValue(samp_tim_hdl);
                 timestamp_decode_dif = timestamp_decode_stop - timestamp_decode_start;
@@ -363,8 +389,8 @@ void USER_task_Handler (pzMsg_t *pMsg)
                 i2c_read_delay++;
                 #ifdef  UART_DEBUG
                     memcpy(&uart_data_send[1], mic_data_1ch, sizeof(mic_data_1ch));
-                    memcpy(&uart_data_send[81], raw_data_received, sizeof(raw_data_received));
-
+                    memcpy(&uart_data_send[I2S_SAMP_PER_FRAME+1], raw_data_received, sizeof(raw_data_received));
+                    //uart_data_send[sizeof(uart_data_send)/2 - 1] = (41u << 8u) + 40u;
                     uart_data_send[0]= (40u << 8u) + 41u;   //start bytes for MATLAB ")("
                     UART_write(uart, uart_data_send, sizeof(uart_data_send));
                 #endif
@@ -380,8 +406,18 @@ void USER_task_Handler (pzMsg_t *pMsg)
             send_array[TRANSMIT_DATA_LENGTH - 1] = counter_packet_send;
 
             timestamp_encode_start =  GPTimerCC26XX_getValue(samp_tim_hdl);
-            //ADPCMEncoderBuf2(mic_data_1ch, (char*)(send_array), &encoder_adpcm);
-            g726_16_encode(&mic_data_1ch, &send_array );
+#ifdef   DOUBLE_DATA_RATE
+            uint8_t j = 0;
+            for(uint8_t i= 1 ; i < I2S_SAMP_PER_FRAME ; i+=2)
+            {
+                temp_output[j] = (mic_data_1ch[i]+mic_data_1ch[i-1])/2;
+                j++;
+            }
+            ADPCMEncoderBuf2(temp_output, (char*)(send_array), &encoder_adpcm);
+#else
+            ADPCMEncoderBuf2(mic_data_1ch, (char*)(send_array), &encoder_adpcm);
+#endif
+//            g726_32_encode(&mic_data_1ch, &send_array );
 
             timestamp_encode_stop =  GPTimerCC26XX_getValue(samp_tim_hdl);
             timestamp_encode_dif = timestamp_encode_stop - timestamp_encode_start;
