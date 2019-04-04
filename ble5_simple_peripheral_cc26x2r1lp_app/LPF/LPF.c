@@ -3,9 +3,9 @@
  *
  * Code generated for Simulink model 'LPF'.
  *
- * Model version                  : 1.74
+ * Model version                  : 1.76
  * Simulink Coder version         : 8.13 (R2017b) 24-Jul-2017
- * C/C++ source code generated on : Mon Feb 11 19:59:40 2019
+ * C/C++ source code generated on : Sat Mar 30 14:49:02 2019
  *
  * Target selection: ert.tlc
  * Embedded hardware selection: ARM Compatible->ARM Cortex
@@ -114,7 +114,7 @@ void LPF_step(void)
     j = 1;
   }
 
-  for (j = 0; j < 6; j++) {
+  for (j = 0; j < 19; j++) {
     q1 = rtConstP.Filter1_Coefficients[1 + j] * rtDW.Filter1_states[j];
     if ((acc1 < 0LL) && (q1 < MIN_int64_T - acc1)) {
       acc1 = MIN_int64_T;
@@ -125,7 +125,8 @@ void LPF_step(void)
     }
   }
 
-  acc1 >>= 15;
+  acc1 = (((acc1 & 32768LL) != 0LL) && (((acc1 & 32767LL) != 0LL) || (acc1 > 0LL)))
+    + (acc1 >> 16);
   if (acc1 > 32767LL) {
     acc1 = 32767LL;
   } else {
@@ -135,7 +136,7 @@ void LPF_step(void)
   }
 
   /* Update delay line for next frame */
-  for (j = 4; j >= 0; j--) {
+  for (j = 17; j >= 0; j--) {
     rtDW.Filter1_states[1 + j] = rtDW.Filter1_states[j];
   }
 

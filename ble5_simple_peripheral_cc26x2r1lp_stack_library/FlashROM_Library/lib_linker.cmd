@@ -5,7 +5,7 @@
 
 "C:\ti\simplelink_cc26x2_sdk_2_30_00_34\source\ti\ble5stack\blelib\cc26x2r1\ctrl\hci_pxxx.a"
 "C:\ti\simplelink_cc26x2_sdk_2_30_00_34\source\ti\ble5stack\blelib\cc26x2r1\ctrl\ll_pxxx.a"
-"C:\ti\simplelink_cc26x2_sdk_2_30_00_34\source\ti\ble5stack\blelib\cc26x2r1\hci_tl\hci_tl_none.a"
+"C:\ti\simplelink_cc26x2_sdk_2_30_00_34\source\ti\ble5stack\blelib\cc26x2r1\hci_tl\hci_tl_full.a"
 "C:\ti\simplelink_cc26x2_sdk_2_30_00_34\source\ti\ble5stack\blelib\cc26x2r1\host\att_pxxx.a"
 "C:\ti\simplelink_cc26x2_sdk_2_30_00_34\source\ti\ble5stack\blelib\cc26x2r1\host\gap_pxxx.a"
 "C:\ti\simplelink_cc26x2_sdk_2_30_00_34\source\ti\ble5stack\blelib\cc26x2r1\host\gatt_pxxx.a"

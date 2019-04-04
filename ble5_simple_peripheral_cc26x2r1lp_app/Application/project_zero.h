@@ -158,7 +158,7 @@ extern "C"
 #define DEFAULT_PARAM_UPDATE_REQ_DECISION     GAP_UPDATE_REQ_ACCEPT_ALL//GAP_UPDATE_REQ_ACCEPT_ALL
 
 // Delay (in ms) after connection establishment before sending a parameter update requst
-#define PZ_SEND_PARAM_UPDATE_DELAY            10
+#define PZ_SEND_PARAM_UPDATE_DELAY            0
 
 
 

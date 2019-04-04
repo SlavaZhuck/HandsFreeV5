@@ -3,9 +3,9 @@
  *
  * Code generated for Simulink model 'LPF'.
  *
- * Model version                  : 1.74
+ * Model version                  : 1.76
  * Simulink Coder version         : 8.13 (R2017b) 24-Jul-2017
- * C/C++ source code generated on : Mon Feb 11 19:59:40 2019
+ * C/C++ source code generated on : Sat Mar 30 14:49:02 2019
  *
  * Target selection: ert.tlc
  * Embedded hardware selection: ARM Compatible->ARM Cortex
@@ -34,7 +34,7 @@
 
 /* Block signals and states (auto storage) for system '<Root>' */
 typedef struct {
-  int16_T Filter1_states[6];           /* '<Root>/Filter1' */
+  int16_T Filter1_states[19];          /* '<Root>/Filter1' */
 } DW;
 
 /* Constant parameters (auto storage) */
@@ -42,7 +42,7 @@ typedef struct {
   /* Computed Parameter: Filter1_Coefficients
    * Referenced by: '<Root>/Filter1'
    */
-  int16_T Filter1_Coefficients[7];
+  int16_T Filter1_Coefficients[20];
 } ConstP;
 
 /* External inputs (root inport signals with auto storage) */
