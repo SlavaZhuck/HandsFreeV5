@@ -9,7 +9,6 @@
 #define STARTUP_GENERALDEF_H_
 
 #define UART_DEBUG
-#define DOUBLE_DATA_RATE
 //#define LPF
 
 #endif /* STARTUP_GENERALDEF_H_ */

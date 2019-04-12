@@ -16,13 +16,9 @@
 #include <GeneralDef.h>
 
 
-#ifdef DOUBLE_DATA_RATE
-    #define I2S_SAMP_PER_FRAME                320
-    #define TRANSMIT_DATA_LENGTH              167  //bytes
-#else
-    #define I2S_SAMP_PER_FRAME                160
-    #define TRANSMIT_DATA_LENGTH              87  //bytes
-#endif
+#define I2S_SAMP_PER_FRAME                320
+#define TRANSMIT_DATA_LENGTH              167  //bytes
+
 #define TMR_PERIOD                          ((48000000UL))
 #define LOW_STATE_TIME                      ((TMR_PERIOD / 10) * 9)
 #define HIGH_STATE_TIME                     (TMR_PERIOD - LOW_STATE_TIME)
