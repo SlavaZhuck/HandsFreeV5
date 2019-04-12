@@ -15,17 +15,24 @@
 #include <ti/sysbios/BIOS.h>
 #include <GeneralDef.h>
 
+
+#ifdef DOUBLE_DATA_RATE
+    #define I2S_SAMP_PER_FRAME                320
+    #define TRANSMIT_DATA_LENGTH              167  //bytes
+#else
+    #define I2S_SAMP_PER_FRAME                160
+    #define TRANSMIT_DATA_LENGTH              87  //bytes
+#endif
 #define TMR_PERIOD                          ((48000000UL))
 #define LOW_STATE_TIME                      ((TMR_PERIOD / 10) * 9)
 #define HIGH_STATE_TIME                     (TMR_PERIOD - LOW_STATE_TIME)
 
-#define SAMP_PERIOD                       (10.0f)  //ms
-#define TRANSMIT_DATA_LENGTH              47  //bytes
+#define SAMP_PERIOD                       (20.0f)  //ms
 
 
 #define SAMP_TIME                         (TMR_PERIOD * (SAMP_PERIOD / 1000.0f) - 1)
 //#define SAMP_TIME                          (4799999/4)
-#define V_STREAM_OUTPUT_SOUND_LEN                (TRANSMIT_DATA_LENGTH - 7)
+#define V_STREAM_OUTPUT_SOUND_LEN                (TRANSMIT_DATA_LENGTH - 7)// - 7
 
 
 #define MAILBOX_DEPTH       10
@@ -33,11 +40,7 @@
 //#define I2S_MEM_BASE                        (GPRAM_BASE + FlashSectorSizeGet())
 
 
-#ifdef DOUBLE_DATA_RATE
-    #define I2S_SAMP_PER_FRAME                  160
-#else
-    #define I2S_SAMP_PER_FRAME                  80
-#endif
+
 //#define NUM_OF_CHANNELS                     2
 //#define I2S_BUF                             sizeof(int16_t) * (I2S_SAMP_PER_FRAME *   \
 //                                            I2SCC26XX_QUEUE_SIZE * NUM_OF_CHANNELS)
@@ -48,7 +51,9 @@
  * Note that the frame size variable is limited to a max size of 255.
  * It is an 8bit field in hardware (AIFDMACFG).
  */
-#define FRAME_SIZE                      I2S_SAMP_PER_FRAME
+//#define FRAME_SIZE                      I2S_SAMP_PER_FRAME
+
+#define FRAME_SIZE                      160
 
 #define I2S_TOTAL_QUEUE_MEM_SZ         (I2S_BLOCK_OVERHEAD_IN_BYTES *           \
                                         I2SCC26XX_QUEUE_SIZE *                  \

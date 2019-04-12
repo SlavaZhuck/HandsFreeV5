@@ -6,6 +6,7 @@
  */
 
 #include "max9860_i2c.h"
+#include "GeneralDef.h"
 
 static I2C_Handle      i2c;
 static I2C_Params      i2cParams;
@@ -30,7 +31,11 @@ void max9860_I2C_Init(void){
 
     /* Point to the T ambient register and read its 2 bytes */
     i2cTxBuffer[0]  = 0x03;//!addr reg
+#ifdef DOUBLE_DATA_RATE
+    i2cTxBuffer[1]  = 0x13;//!system clock                       //clock control            0x03
+#else
     i2cTxBuffer[1]  = 0x12;//!system clock                       //clock control            0x03
+#endif
     i2cTxBuffer[2]  = 0x80;//!stereo audio clock control high                               0x04
     i2cTxBuffer[3]  = 0x00;//!stereo audio clock control low                                0x05
     i2cTxBuffer[4]  = 0x40;//!interface  0x50                        //digital audio interface  0x06
