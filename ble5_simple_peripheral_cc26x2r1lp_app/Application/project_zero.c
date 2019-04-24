@@ -144,11 +144,10 @@ static List_List setPhyCommStatList;
 List_List paramUpdateList;
 
 /* Pin driver handles */
-PIN_Handle buttonPinHandle;
+
 PIN_Handle ledPinHandle;
 
 /* Global memory storage for a PIN_Config table */
-static PIN_State buttonPinState;
 static PIN_State ledPinState;
 
 /*
@@ -162,26 +161,6 @@ PIN_Config ledPinTable[] = {
     PIN_DRVSTR_MAX,
     PIN_TERMINATE
 };
-
-/*
- * Application button pin configuration table:
- *   - Buttons interrupts are configured to trigger on falling edge.
- */
-PIN_Config buttonPinTable[] = {
-    Board_PIN_BUTTON0 | PIN_INPUT_EN | PIN_PULLUP | PIN_IRQ_NEGEDGE,
-    Board_PIN_BUTTON1 | PIN_INPUT_EN | PIN_PULLUP | PIN_IRQ_NEGEDGE,
-    PIN_TERMINATE
-};
-
-// Clock objects for debouncing the buttons
-static Clock_Struct button0DebounceClock;
-static Clock_Struct button1DebounceClock;
-static Clock_Handle button0DebounceClockHandle;
-static Clock_Handle button1DebounceClockHandle;
-
-// State of the buttons
-static uint8_t button0State = 0;
-static uint8_t button1State = 0;
 
 extern int stream_on;
 bool connection_occured = FALSE;
@@ -243,11 +222,6 @@ static void ProjectZero_handleUpdateLinkEvent(gapLinkUpdateEvent_t *pEvt);
 static void ProjectZero_processConnEvt(Gap_ConnEventRpt_t *pReport);
 static void ProjectZero_connEvtCB(Gap_ConnEventRpt_t *pReport);
 
-/* Button handling functions */
-static void buttonDebounceSwiFxn(UArg buttonId);
-static void buttonCallbackFxn(PIN_Handle handle,
-                              PIN_Id pinId);
-static void ProjectZero_handleButtonPress(pzButtonState_t *pState);
 
 /* Utility functions */
 static char * util_arrtohex(uint8_t const *src,
@@ -356,32 +330,7 @@ static void ProjectZero_init(void)
         Task_exit();
     }
 
-    // Open button pins
-    buttonPinHandle = PIN_open(&buttonPinState, buttonPinTable);
-    if(!buttonPinHandle)
-    {
-        Log_error0("Error initializing button pins");
-        Task_exit();
-    }
 
-    // Setup callback for button pins
-    if(PIN_registerIntCb(buttonPinHandle, &buttonCallbackFxn) != 0)
-    {
-        Log_error0("Error registering button callback function");
-        Task_exit();
-    }
-
-    // Create the debounce clock objects for Button 0 and Button 1
-    button0DebounceClockHandle = Util_constructClock(&button0DebounceClock,
-                                                     buttonDebounceSwiFxn, 50,
-                                                     0,
-                                                     0,
-                                                     Board_PIN_BUTTON0);
-    button1DebounceClockHandle = Util_constructClock(&button1DebounceClock,
-                                                     buttonDebounceSwiFxn, 50,
-                                                     0,
-                                                     0,
-                                                     Board_PIN_BUTTON1);
 
     // Set the Device Name characteristic in the GAP GATT Service
     // For more information, see the section in the User's Guide:
@@ -722,12 +671,7 @@ static void ProjectZero_processApplicationMessage(pzMsg_t *pMsg)
           ProjectZero_updateCharVal(pCharData);
           break;
 
-      case PZ_BUTTON_DEBOUNCED_EVT: /* Message from swi about pin change */
-      {
-          pzButtonState_t *pButtonState = (pzButtonState_t *)pMsg->pData;
-          ProjectZero_handleButtonPress(pButtonState);
-      }
-      break;
+
 
       case PZ_ADV_EVT:
           ProjectZero_processAdvEvent((pzGapAdvEventData_t*)(pMsg->pData));
@@ -1609,43 +1553,7 @@ static void ProjectZero_updatePHYStat(uint16_t eventCode, uint8_t *pMsg)
     } // end of switch (eventCode)
 }
 
-/*
- * @brief   Handle a debounced button press or release in Task context.
- *          Invoked by the taskFxn based on a message received from a callback.
- *
- * @see     buttonDebounceSwiFxn
- * @see     buttonCallbackFxn
- *
- * @param   pState  pointer to pzButtonState_t message sent from debounce Swi.
- *
- * @return  None.
- */
-static void ProjectZero_handleButtonPress(pzButtonState_t *pState)
-{
-    Log_info2("%s %s",
-              (uintptr_t)(pState->pinId ==
-                          Board_PIN_BUTTON0 ? "Button 0" : "Button 1"),
-              (uintptr_t)(pState->state ?
-                          ANSI_COLOR(FG_GREEN)"pressed"ANSI_COLOR(ATTR_RESET) :
-                          ANSI_COLOR(FG_YELLOW)"released"ANSI_COLOR(ATTR_RESET)
-                         ));
 
-    // Update the service with the new value.
-    // Will automatically send notification/indication if enabled.
-    switch(pState->pinId)
-    {
-    case Board_PIN_BUTTON0:
-//        ButtonService_SetParameter(BS_BUTTON0_ID,
-//                                   sizeof(pState->state),
-//                                   &pState->state);
-        break;
-    case Board_PIN_BUTTON1:
-//        ButtonService_SetParameter(BS_BUTTON1_ID,
-//                                   sizeof(pState->state),
-//                                   &pState->state);
-        break;
-    }
-}
 
 
 /*
@@ -1870,117 +1778,9 @@ void ProjectZero_paramUpdClockHandler(UArg arg)
     }
 }
 
-/*********************************************************************
- * @fn     buttonDebounceSwiFxn
- *
- * @brief  Callback from Clock module on timeout
- *
- *         Determines new state after debouncing
- *
- * @param  buttonId    The pin being debounced
- */
-static void buttonDebounceSwiFxn(UArg buttonId)
-{
-    // Used to send message to app
-    pzButtonState_t buttonMsg = { .pinId = buttonId };
-    uint8_t sendMsg = FALSE;
 
-    // Get current value of the button pin after the clock timeout
-    uint8_t buttonPinVal = PIN_getInputValue(buttonId);
 
-    // Set interrupt direction to opposite of debounced state
-    // If button is now released (button is active low, so release is high)
-    if(buttonPinVal)
-    {
-        // Enable negative edge interrupts to wait for press
-        PIN_setConfig(buttonPinHandle, PIN_BM_IRQ, buttonId | PIN_IRQ_NEGEDGE);
-    }
-    else
-    {
-        // Enable positive edge interrupts to wait for relesae
-        PIN_setConfig(buttonPinHandle, PIN_BM_IRQ, buttonId | PIN_IRQ_POSEDGE);
-    }
 
-    switch(buttonId)
-    {
-    case Board_PIN_BUTTON0:
-        // If button is now released (buttonPinVal is active low, so release is 1)
-        // and button state was pressed (buttonstate is active high so press is 1)
-        if(buttonPinVal && button0State)
-        {
-            // Button was released
-            buttonMsg.state = button0State = 0;
-            sendMsg = TRUE;
-        }
-        else if(!buttonPinVal && !button0State)
-        {
-            // Button was pressed
-            buttonMsg.state = button0State = 1;
-            sendMsg = TRUE;
-        }
-        break;
-
-    case Board_PIN_BUTTON1:
-        // If button is now released (buttonPinVal is active low, so release is 1)
-        // and button state was pressed (buttonstate is active high so press is 1)
-        if(buttonPinVal && button1State)
-        {
-            // Button was released
-            buttonMsg.state = button1State = 0;
-            sendMsg = TRUE;
-        }
-        else if(!buttonPinVal && !button1State)
-        {
-            // Button was pressed
-            buttonMsg.state = button1State = 1;
-            sendMsg = TRUE;
-        }
-        break;
-    }
-
-    if(sendMsg == TRUE)
-    {
-        pzButtonState_t *pButtonState = ICall_malloc(sizeof(pzButtonState_t));
-        if(pButtonState != NULL)
-        {
-            *pButtonState = buttonMsg;
-            if(ProjectZero_enqueueMsg(PZ_BUTTON_DEBOUNCED_EVT, pButtonState) != SUCCESS)
-            {
-              ICall_free(pButtonState);
-            }
-        }
-    }
-}
-
-/*********************************************************************
- * @fn     buttonCallbackFxn
- *
- * @brief  Callback from PIN driver on interrupt
- *
- *         Sets in motion the debouncing.
- *
- * @param  handle    The PIN_Handle instance this is about
- * @param  pinId     The pin that generated the interrupt
- */
-static void buttonCallbackFxn(PIN_Handle handle, PIN_Id pinId)
-{
-    Log_info1("Button interrupt: %s",
-              (uintptr_t)((pinId == Board_PIN_BUTTON0) ? "Button 0" : "Button 1"));
-
-    // Disable interrupt on that pin for now. Re-enabled after debounce.
-    PIN_setConfig(handle, PIN_BM_IRQ, pinId | PIN_IRQ_DIS);
-
-    // Start debounce timer
-    switch(pinId)
-    {
-    case Board_PIN_BUTTON0:
-        Util_startClock((Clock_Struct *)button0DebounceClockHandle);
-        break;
-    case Board_PIN_BUTTON1:
-        Util_startClock((Clock_Struct *)button1DebounceClockHandle);
-        break;
-    }
-}
 
 /******************************************************************************
  *****************************************************************************

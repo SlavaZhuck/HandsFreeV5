@@ -15,6 +15,12 @@
 #include "Uart_Parser.h"
 #include "Uart_commands.h"
 #include "GeneralDef.h"
+#include <osal_snv.h>
+#include <ti/drivers/ADCBuf.h>
+#include <osal/src/inc/osal_snv.h>
+#include "driverlib/aon_batmon.h"
+#include "buttons.h"
+#include "power_battery.h"
 #ifdef  LPF
   #include "../LPF/LPF.h"                       /* Model's header file */
   #include "../LPF/rtwtypes.h"
@@ -29,13 +35,14 @@ GPTimerCC26XX_Handle samp_tim_hdl = NULL;
 GPTimerCC26XX_Value load_val[2] = {LOW_STATE_TIME, HIGH_STATE_TIME};
 /*********************************************************************/
 
+/* Debug time variables ***************************************************/
 GPTimerCC26XX_Value timestamp_encode_start;
 GPTimerCC26XX_Value timestamp_encode_stop;
 GPTimerCC26XX_Value timestamp_encode_dif;
 GPTimerCC26XX_Value timestamp_decode_start;
 GPTimerCC26XX_Value timestamp_decode_stop;
 GPTimerCC26XX_Value timestamp_decode_dif;
-
+/*********************************************************************/
 #ifdef  LPF
     GPTimerCC26XX_Value timestamp_LPF_start;
     GPTimerCC26XX_Value timestamp_LPF_stop;
@@ -45,7 +52,14 @@ GPTimerCC26XX_Value timestamp_decode_dif;
     GPTimerCC26XX_Value timestamp_DECIM_dif;
 #endif
 
+/******Crypto key Start ******/
+#define KEY_SNV_ID                          BLE_NVID_CUST_START
+#define KEY_SIZE                            16
+#define INIT_VOL_ADDR                       BLE_NVID_CUST_START+1
+/******Crypto key End ******/
 
+extern ADCBuf_Conversion adc_conversion;
+extern ADCBuf_Handle adc_hdl;
 /******Uart Start ******/
 #ifdef UART_DEBUG
   #define UART_BAUD_RATE 921600
@@ -68,18 +82,23 @@ static uint8_t rxBuf[MAX_NUM_RX_BYTES];   // Receive buffer
 //int16_t uart_data_send[I2S_SAMP_PER_FRAME+1];
 int16_t uart_data_send[I2S_SAMP_PER_FRAME * 2 + 1];
 #endif
-
+/******Uart End ******/
+void swap_array (int8_t *swap_arr);
 static void readCallback(UART_Handle handle, void *rxBuf, size_t size);
 static void writeCallback(UART_Handle handle_uart, void *rxBuf, size_t size);
 
-/******Uart End ******/
+static void bufRdy_callback(I2SCC26XX_Handle handle, I2SCC26XX_StreamNotification *pStreamNotification);
+static void AudioDuplex_enableCache();
+static void AudioDuplex_disableCache();
+
 
 /* I2C variables *****************************************************/
 static uint16_t i2c_read_delay;
 /*********************************************************************/
+uint32_t battery_voltage;
 int stream_on = 0;
+extern bool enable_blink;
 
-extern PIN_Handle buttonPinHandle;
 extern PIN_Handle ledPinHandle;
 
 uint16_t counter_packet_send = 0;
@@ -88,10 +107,9 @@ float packet_lost = 0;
 uint16_t error_counter_packet_send = 0;
 
 uint8_t send_array[DS_STREAM_OUTPUT_LEN];
+uint8_t current_volume = INIT_GAIN;
 
 /* I2S variables START*/
-static void bufRdy_callback(I2SCC26XX_Handle handle, I2SCC26XX_StreamNotification *pStreamNotification);
-
 
 static I2SCC26XX_StreamNotification i2sStream;
 static I2SCC26XX_BufferRelease bufferRelease;
@@ -123,8 +141,11 @@ int16_t filtered_data[I2S_SAMP_PER_FRAME];
 bool gotBufferIn = false;
 bool gotBufferInOut = false;
 bool gotBufferOut = false;
-static void AudioDuplex_enableCache();
-static void AudioDuplex_disableCache();
+
+extern bool button_check;
+
+
+
 
 /* I2S variables END*/
 static Mailbox_Handle mailbox;
@@ -135,6 +156,8 @@ extern bool connection_occured;
 extern List_List paramUpdateList;
 static struct ADPCMstate encoder_adpcm, decoder_adpcm;
 /* codec end */
+
+extern Clock_Handle ADC_ChannelSwitchClockHandle;
 
 
 #ifdef LPF
@@ -174,9 +197,9 @@ void rt_OneStep(void)
 
 void start_voice_handle(void)
 {
-    uint16_t tempcounter = 47999; //1ms delay
     max9860_I2C_Shutdown_state(0);//disable shutdown_mode
-
+    //ProjectZero_enqueueMsg(PZ_APP_MSG_Load_vol, NULL);// read global vol level
+    osal_snv_read(INIT_VOL_ADDR, 1, &current_volume);
     PIN_setOutputValue(ledPinHandle, Board_PIN_GLED, 1);
     GPTimerCC26XX_setLoadValue(samp_tim_hdl, (GPTimerCC26XX_Value)SAMP_TIME);
     GPTimerCC26XX_start(samp_tim_hdl);
@@ -199,7 +222,6 @@ void stop_voice_handle(void)
         }
     }
 
-
     PIN_setOutputValue(ledPinHandle, Board_PIN_GLED, 0);
     stream_on = 0;
     while(mailpost_usage > 0)
@@ -214,6 +236,9 @@ void stop_voice_handle(void)
 #ifdef LPF
     memset ( &rtDW, 0, sizeof(rtDW) );
 #endif
+    /* save current volume level */
+    //ProjectZero_enqueueMsg(PZ_APP_MSG_Write_vol, NULL);
+    osal_snv_write(INIT_VOL_ADDR, 1, &current_volume);
 }
 
 
@@ -229,6 +254,15 @@ void HandsFree_init (void)
     tim_params.mode = GPT_MODE_PERIODIC_UP;
     tim_params.debugStallMode = GPTimerCC26XX_DEBUG_STALL_ON;
     blink_tim_hdl = GPTimerCC26XX_open(Board_GPTIMER2A, &tim_params);
+
+    /* init read of volume level */
+    uint8 status;
+    status = osal_snv_read(INIT_VOL_ADDR, 1, &current_volume);
+    if(status != SUCCESS)
+    {/* write value if first run*/
+        current_volume = INIT_GAIN;
+        status = osal_snv_write(INIT_VOL_ADDR, 1, &current_volume);
+    }
 
     if (blink_tim_hdl == NULL) {
         while (1);
@@ -300,17 +334,39 @@ void HandsFree_init (void)
     UART_write(uart, macAddress, sizeof(macAddress));
     int rxBytes = UART_read(uart, rxBuf, wantedRxBytes);
 
+
+    buttons_init();
+    power_battery_init();
 }
+
 
 void blink_timer_callback(GPTimerCC26XX_Handle handle, GPTimerCC26XX_IntMask interruptMask)
 {
     static bool blink = false;
+    static bool bat_low = false;
+
+    if(button_check)
+    {
+        adc_conversion.adcChannel = ADC_POWER_BUTTON_PIN;
+        if (ADCBuf_convert(adc_hdl, &adc_conversion, 1) != ADCBuf_STATUS_SUCCESS) {
+            while(1);
+        }
+    }
+
     if(blink)
     {
         blink = false;
         GPTimerCC26XX_setLoadValue(blink_tim_hdl, load_val[0]);
 
-        PIN_setOutputValue(ledPinHandle, Board_PIN_RLED, 0);
+        if(!bat_low)
+        {
+            battery_voltage = get_bat_voltage();
+            bat_low = battery_voltage < BAT_LOW_VOLTAGE;
+        }
+        else
+        {
+            PIN_setOutputValue(ledPinHandle, Board_PIN_RLED, 0);
+        }
 
         if(!stream_on)
         {
@@ -322,10 +378,21 @@ void blink_timer_callback(GPTimerCC26XX_Handle handle, GPTimerCC26XX_IntMask int
         blink = true;
         GPTimerCC26XX_setLoadValue(blink_tim_hdl, load_val[1]);
 
+        if(bat_low)
+        {
+            PIN_setOutputValue(ledPinHandle, Board_PIN_RLED, 1);
+        }
+
          if(!stream_on)
         {
             PIN_setOutputValue(ledPinHandle, Board_PIN_GLED, 1);
         }
+    }
+
+    if(!enable_blink)
+    {
+        PIN_setOutputValue(ledPinHandle, Board_PIN_RLED, 1);
+        PIN_setOutputValue(ledPinHandle, Board_PIN_GLED, 0);
     }
 }
 
@@ -345,18 +412,20 @@ void USER_task_Handler (pzMsg_t *pMsg)
 
     switch(pMsg->event)
     {
-    case PZ_SERVICE_WRITE_EVT: /* Message about received value write */
+        case PZ_SERVICE_WRITE_EVT: /* Message about received value write */
+        {
             /* Call different handler per service */
             switch(pCharData->svcUUID)
             {
-    //            case LED_SERVICE_SERV_UUID:
-    //                ProjectZero_LedService_ValueChangeHandler(pCharData);
-    //                break;
+    //        case LED_SERVICE_SERV_UUID:
+    //            ProjectZero_LedService_ValueChangeHandler(pCharData);
+    //            break;
               case DATA_SERVICE_SERV_UUID:
                   ProjectZero_DataService_ValueChangeHandler(pCharData);
                   break;
             }
-            break;
+        }
+        break;
 
         case PZ_SERVICE_CFG_EVT: /* Message about received CCCD write */
             /* Call different handler per service */
@@ -371,17 +440,18 @@ void USER_task_Handler (pzMsg_t *pMsg)
             }
             break;
         case PZ_SEND_PACKET_EVT:
+        {
             mailpost_usage = Mailbox_getNumPendingMsgs(mailbox);
             if(mailpost_usage>0)
             {
                 Mailbox_pend(mailbox, packet_data, BIOS_NO_WAIT);
 
                 timestamp_decode_start =  GPTimerCC26XX_getValue(measure_tim_hdl);
-//                decoder_adpcm.prevsample = ((int16_t)(packet_data[V_STREAM_OUTPUT_SOUND_LEN]) << 8) |
-//                        (int16_t)(packet_data[V_STREAM_OUTPUT_SOUND_LEN + 1]);
-//
-//                decoder_adpcm.previndex = ((int32_t)(packet_data[V_STREAM_OUTPUT_SOUND_LEN + 2]));
-
+    //                decoder_adpcm.prevsample = ((int16_t)(packet_data[V_STREAM_OUTPUT_SOUND_LEN]) << 8) |
+    //                        (int16_t)(packet_data[V_STREAM_OUTPUT_SOUND_LEN + 1]);
+    //
+    //                decoder_adpcm.previndex = ((int32_t)(packet_data[V_STREAM_OUTPUT_SOUND_LEN + 2]));
+//                swap_array(packet_data);
                 ADPCMDecoderBuf2((char*)(packet_data), raw_data_received, &decoder_adpcm);
                 ADPCMDecoderBuf2((char*)(&packet_data[TRANSMIT_DATA_LENGTH / 4]), &raw_data_received[I2S_SAMP_PER_FRAME / 4], &decoder_adpcm);
                 ADPCMDecoderBuf2((char*)(&packet_data[TRANSMIT_DATA_LENGTH / 2]), &raw_data_received[I2S_SAMP_PER_FRAME / 2], &decoder_adpcm);
@@ -445,12 +515,12 @@ void USER_task_Handler (pzMsg_t *pMsg)
                 timestamp_LPF_stop =  GPTimerCC26XX_getValue(measure_tim_hdl);
                 timestamp_LPF_dif = timestamp_LPF_stop - timestamp_LPF_start;
 
-//            #else
-//                for(uint8_t i= 0 ; i < I2S_SAMP_PER_FRAME ; i++)
-//                {
-//                    filtered_data[i] = mic_data_1ch[i];
-//
-//                }
+    //            #else
+    //                for(uint8_t i= 0 ; i < I2S_SAMP_PER_FRAME ; i++)
+    //                {
+    //                    filtered_data[i] = mic_data_1ch[i];
+    //
+    //                }
 
             #endif
 
@@ -462,6 +532,7 @@ void USER_task_Handler (pzMsg_t *pMsg)
 
             timestamp_encode_stop =  GPTimerCC26XX_getValue(measure_tim_hdl);
             timestamp_encode_dif = timestamp_encode_stop - timestamp_encode_start;
+//            swap_array(send_array);
             status = DataService_SetParameter(DS_STREAM_OUTPUT_ID, DS_STREAM_OUTPUT_LEN, send_array);
             if((status != SUCCESS) || (status == 0x15))
             {
@@ -475,23 +546,68 @@ void USER_task_Handler (pzMsg_t *pMsg)
                 uart_data_send[0]= (40u << 8u) + 41u;   //start bytes for MATLAB ")("
                 UART_write(uart, uart_data_send, sizeof(uart_data_send));
             #endif
+            }
             break;
+
         case PZ_I2C_Read_status_EVT:
+        {
             max9860_I2C_Read_Status();
-            break;
+        }
+        break;
+
         case PZ_SEND_START_STREAM_EVT:
+        {
             error_counter_packet_send = 0;
             counter_packet_send = 0;
             counter_packet_received = 0;
             start_voice_handle();
-            break;
+        }
+        break;
+
         case PZ_SEND_STOP_STREAM_EVT:
+        {
             stop_voice_handle();
-            break;
+        }
+        break;
+
+        case PZ_BUTTON_DEBOUNCED_EVT: /* Message from swi about pin change */
+        {
+            pzButtonState_t *pButtonState = (pzButtonState_t *)pMsg->pData;
+            Handler_ButtonPress(pButtonState);
+        }
+        break;
+
+        case PZ_APP_MSG_Read_ADC_Voltage:
+        {
+            adc_conversion.adcChannel = ADC_VOLTAGE_MEASURE_PIN;
+            button_check = FALSE;
+            if (ADCBuf_convert(adc_hdl, &adc_conversion, 1) != ADCBuf_STATUS_SUCCESS) {
+                while(1);
+            }
+            /* return Power button monitor ADC channel after ADC_SWITCH_TIMEOUT*/
+            Util_startClock((Clock_Struct *)ADC_ChannelSwitchClockHandle);
+        }
+        break;
+
+        case PZ_APP_MSG_Load_vol:
+        {
+            status = osal_snv_read(INIT_VOL_ADDR, 1, &current_volume);
+            if(status != SUCCESS)
+            {
+                current_volume = INIT_GAIN;
+            }
+        }
+        break;
+
+        case PZ_APP_MSG_Write_vol:
+        {
+            osal_snv_write(INIT_VOL_ADDR, 1, &current_volume);
+        }
+        break;
 
         default:
-            break;
-      }
+        break;
+    }
 }
 
 
@@ -644,4 +760,26 @@ static void readCallback(UART_Handle handle, void *rxBuf, size_t size)
 
     wantedRxBytes = 1;
     UART_read(handle, rxBuf, wantedRxBytes);
+}
+
+
+void swap_array (int8_t *swap_arr)
+{
+    int8_t temp;
+    temp = swap_arr[163];
+    swap_arr[163] = swap_arr[43];
+    swap_arr[43] = temp;
+
+    temp = swap_arr[164];
+    swap_arr[164] = swap_arr[44];
+    swap_arr[44] = temp;
+
+    temp = swap_arr[165];
+    swap_arr[165] = swap_arr[45];
+    swap_arr[45] = temp;
+
+    temp = swap_arr[166];
+    swap_arr[166] = swap_arr[46];
+    swap_arr[46] = temp;
+
 }
