@@ -11,6 +11,7 @@
 #include "I2S/I2SCC26XX.h"
 #include <ti/sysbios/family/arm/m3/Hwi.h>
 #include "codec/SitADPCM.h"
+#include "ima_codec/ima.h"
 #include <ti/sysbios/knl/Mailbox.h>
 #include "Uart_Parser.h"
 #include "Uart_commands.h"
@@ -80,7 +81,7 @@ static uint8_t rxBuf[MAX_NUM_RX_BYTES];   // Receive buffer
 
 #ifdef UART_DEBUG
 //int16_t uart_data_send[I2S_SAMP_PER_FRAME+1];
-int16_t uart_data_send[I2S_SAMP_PER_FRAME * 2 + 1];
+int16_t uart_data_send[I2S_SAMP_PER_FRAME * 2 + 1 + 8]; // 2 buffers, start bytes, 2 ima_coder states
 #endif
 /******Uart End ******/
 void swap_array (int8_t *swap_arr);
@@ -101,10 +102,10 @@ extern bool enable_blink;
 
 extern PIN_Handle ledPinHandle;
 
-uint16_t counter_packet_send = 0;
-uint16_t counter_packet_received = 0;
+uint32_t counter_packet_send = 0;
+uint32_t counter_packet_received = 0;
 float packet_lost = 0;
-uint16_t error_counter_packet_send = 0;
+uint32_t error_counter_packet_send = 0;
 
 uint8_t send_array[DS_STREAM_OUTPUT_LEN];
 uint8_t current_volume = INIT_GAIN;
@@ -134,7 +135,6 @@ static I2SCC26XX_Params i2sParams =
 
 uint8_t packet_data[TRANSMIT_DATA_LENGTH];
 int16_t raw_data_received[I2S_SAMP_PER_FRAME];
-int16_t previous_sample;
 int16_t mic_data_1ch[I2S_SAMP_PER_FRAME];
 int16_t filtered_data[I2S_SAMP_PER_FRAME];
 
@@ -155,6 +155,11 @@ extern pzConnRec_t connList[MAX_NUM_BLE_CONNS];
 extern bool connection_occured;
 extern List_List paramUpdateList;
 static struct ADPCMstate encoder_adpcm, decoder_adpcm;
+
+
+static ima_state ima_Encode_state;
+static ima_state ima_Decode_state;
+static uint32_t previous_receive_counter = 0;
 /* codec end */
 
 extern Clock_Handle ADC_ChannelSwitchClockHandle;
@@ -347,10 +352,7 @@ void blink_timer_callback(GPTimerCC26XX_Handle handle, GPTimerCC26XX_IntMask int
 
     if(button_check)
     {
-        adc_conversion.adcChannel = ADC_POWER_BUTTON_PIN;
-        if (ADCBuf_convert(adc_hdl, &adc_conversion, 1) != ADCBuf_STATUS_SUCCESS) {
-            while(1);
-        }
+        ProjectZero_enqueueMsg(PZ_APP_MSG_Read_ADC_Power_Button_Voltage, NULL);
     }
 
     if(blink)
@@ -444,22 +446,41 @@ void USER_task_Handler (pzMsg_t *pMsg)
             mailpost_usage = Mailbox_getNumPendingMsgs(mailbox);
             if(mailpost_usage>0)
             {
+                if(previous_receive_counter != (counter_packet_received - 1))
+                {
+                   // memset(&ima_Decode_state, 0, sizeof(ima_Decode_state));
+                }
                 Mailbox_pend(mailbox, packet_data, BIOS_NO_WAIT);
 
                 timestamp_decode_start =  GPTimerCC26XX_getValue(measure_tim_hdl);
-    //                decoder_adpcm.prevsample = ((int16_t)(packet_data[V_STREAM_OUTPUT_SOUND_LEN]) << 8) |
-    //                        (int16_t)(packet_data[V_STREAM_OUTPUT_SOUND_LEN + 1]);
-    //
-    //                decoder_adpcm.previndex = ((int32_t)(packet_data[V_STREAM_OUTPUT_SOUND_LEN + 2]));
-//                swap_array(packet_data);
-                ADPCMDecoderBuf2((char*)(packet_data), raw_data_received, &decoder_adpcm);
-                ADPCMDecoderBuf2((char*)(&packet_data[TRANSMIT_DATA_LENGTH / 4]), &raw_data_received[I2S_SAMP_PER_FRAME / 4], &decoder_adpcm);
-                ADPCMDecoderBuf2((char*)(&packet_data[TRANSMIT_DATA_LENGTH / 2]), &raw_data_received[I2S_SAMP_PER_FRAME / 2], &decoder_adpcm);
-                ADPCMDecoderBuf2((char*)(&packet_data[TRANSMIT_DATA_LENGTH* 3 / 4]), &raw_data_received[I2S_SAMP_PER_FRAME * 3 / 4], &decoder_adpcm);
+//                decoder_adpcm.prevsample = ((int16_t)(packet_data[V_STREAM_OUTPUT_SOUND_LEN]) << 8) |
+//                        (int16_t)(packet_data[V_STREAM_OUTPUT_SOUND_LEN + 1]);
+//
+//                decoder_adpcm.previndex = ((int32_t)(packet_data[V_STREAM_OUTPUT_SOUND_LEN + 2]));
+//                ADPCMDecoderBuf2((char*)(packet_data), raw_data_received, &decoder_adpcm);
+//                ADPCMDecoderBuf2((char*)(&packet_data[TRANSMIT_DATA_LENGTH / 4]), &raw_data_received[I2S_SAMP_PER_FRAME / 4], &decoder_adpcm);
+//                ADPCMDecoderBuf2((char*)(&packet_data[TRANSMIT_DATA_LENGTH / 2]), &raw_data_received[I2S_SAMP_PER_FRAME / 2], &decoder_adpcm);
+//                ADPCMDecoderBuf2((char*)(&packet_data[TRANSMIT_DATA_LENGTH* 3 / 4]), &raw_data_received[I2S_SAMP_PER_FRAME * 3 / 4], &decoder_adpcm);
 
+
+                int16_t temp_current = packet_data[V_STREAM_OUTPUT_SOUND_LEN + 1] | packet_data[V_STREAM_OUTPUT_SOUND_LEN] << 8;
+                ima_Decode_state.current = (int32_t)temp_current;
+                ima_Decode_state.stepindex = packet_data[V_STREAM_OUTPUT_SOUND_LEN + 2];
+                ima_decode_mono(&ima_Decode_state, raw_data_received, packet_data, FRAME_SIZE);
                 timestamp_decode_stop =  GPTimerCC26XX_getValue(measure_tim_hdl);
                 timestamp_decode_dif = timestamp_decode_stop - timestamp_decode_start;
-                previous_sample = raw_data_received[I2S_SAMP_PER_FRAME-1];
+                previous_receive_counter = counter_packet_received;
+            #ifdef  LPF
+                timestamp_LPF_start =  GPTimerCC26XX_getValue(measure_tim_hdl);
+                for(uint16_t i = 0 ; i< I2S_SAMP_PER_FRAME; i++)
+                {
+                    rtU.In1 = raw_data_received[i];
+                    rt_OneStep();
+                    raw_data_received[i] = rtY.Out1;
+                }
+                timestamp_LPF_stop =  GPTimerCC26XX_getValue(measure_tim_hdl);
+                timestamp_LPF_dif = timestamp_LPF_stop - timestamp_LPF_start;
+            #endif
             }else{
                 memset ( packet_data,   0, sizeof(packet_data) );
                 memset ( raw_data_received, 0, sizeof(raw_data_received));
@@ -471,8 +492,8 @@ void USER_task_Handler (pzMsg_t *pMsg)
             gotBufferInOut = I2SCC26XX_requestBuffer(i2sHandle, &bufferRequest);
             if (gotBufferInOut)
             {
-                memcpy(bufferRequest.bufferOut, raw_data_received, sizeof(raw_data_received));
-                memcpy(mic_data_1ch, bufferRequest.bufferIn, sizeof(mic_data_1ch));
+                memcpy(bufferRequest.bufferOut, raw_data_received, sizeof(raw_data_received) / 2 );
+                memcpy(mic_data_1ch, bufferRequest.bufferIn, sizeof(mic_data_1ch) / 2 );
 
                 bufferRelease.bufferHandleOut = bufferRequest.bufferHandleOut;
                 bufferRelease.bufferHandleIn = bufferRequest.bufferHandleIn;
@@ -494,45 +515,32 @@ void USER_task_Handler (pzMsg_t *pMsg)
                 gotBufferInOut = 0;
                 i2c_read_delay++;
             }
-            send_array[V_STREAM_OUTPUT_SOUND_LEN] = encoder_adpcm.prevsample >> 8;
-            send_array[V_STREAM_OUTPUT_SOUND_LEN + 1] = encoder_adpcm.prevsample;
-            send_array[V_STREAM_OUTPUT_SOUND_LEN + 2] = encoder_adpcm.previndex;
-
-            send_array[TRANSMIT_DATA_LENGTH - 4] = counter_packet_send >> 24;
-            send_array[TRANSMIT_DATA_LENGTH - 3] = counter_packet_send >> 16;
-            send_array[TRANSMIT_DATA_LENGTH - 2] = counter_packet_send >> 8;
-            send_array[TRANSMIT_DATA_LENGTH - 1] = counter_packet_send;
 
             timestamp_encode_start =  GPTimerCC26XX_getValue(measure_tim_hdl);
-            #ifdef  LPF
-                timestamp_LPF_start =  GPTimerCC26XX_getValue(measure_tim_hdl);
-                for(uint8_t i = 0 ; i< I2S_SAMP_PER_FRAME; i++)
-                {
-                    rtU.In1 = mic_data_1ch[i];
-                    rt_OneStep();
-                    filtered_data[i] = rtY.Out1;
-                }
-                timestamp_LPF_stop =  GPTimerCC26XX_getValue(measure_tim_hdl);
-                timestamp_LPF_dif = timestamp_LPF_stop - timestamp_LPF_start;
 
-    //            #else
-    //                for(uint8_t i= 0 ; i < I2S_SAMP_PER_FRAME ; i++)
-    //                {
-    //                    filtered_data[i] = mic_data_1ch[i];
-    //
-    //                }
 
-            #endif
+//            ADPCMEncoderBuf2(mic_data_1ch, (char*)(send_array), &encoder_adpcm);
+//            ADPCMEncoderBuf2(&mic_data_1ch[I2S_SAMP_PER_FRAME / 4], (char*)(&send_array[TRANSMIT_DATA_LENGTH/4]), &encoder_adpcm);
+//            ADPCMEncoderBuf2(&mic_data_1ch[I2S_SAMP_PER_FRAME / 2], (char*)(&send_array[TRANSMIT_DATA_LENGTH/2]), &encoder_adpcm);
+//            ADPCMEncoderBuf2(&mic_data_1ch[I2S_SAMP_PER_FRAME * 3 / 4], (char*)(&send_array[TRANSMIT_DATA_LENGTH * 3 / 4]), &encoder_adpcm);
+//
+//            send_array[V_STREAM_OUTPUT_SOUND_LEN] = (uint8_t)(encoder_adpcm.prevsample >> 8);
+//            send_array[V_STREAM_OUTPUT_SOUND_LEN + 1] = (uint8_t)encoder_adpcm.prevsample;
+//            send_array[V_STREAM_OUTPUT_SOUND_LEN + 2] = (uint8_t)encoder_adpcm.previndex;
+            send_array[V_STREAM_OUTPUT_SOUND_LEN] =     (uint8_t)(ima_Encode_state.current >> 8);
+            send_array[V_STREAM_OUTPUT_SOUND_LEN + 1] = (uint8_t)(ima_Encode_state.current & 0xFF);
+            send_array[V_STREAM_OUTPUT_SOUND_LEN + 2] = (uint8_t)ima_Encode_state.stepindex;
+            ima_encode_mono(&ima_Encode_state, send_array, mic_data_1ch, sizeof(mic_data_1ch));
 
-            ADPCMEncoderBuf2(mic_data_1ch, (char*)(send_array), &encoder_adpcm);
-            ADPCMEncoderBuf2(&mic_data_1ch[I2S_SAMP_PER_FRAME / 4], (char*)(&send_array[TRANSMIT_DATA_LENGTH/4]), &encoder_adpcm);
-            ADPCMEncoderBuf2(&mic_data_1ch[I2S_SAMP_PER_FRAME / 2], (char*)(&send_array[TRANSMIT_DATA_LENGTH/2]), &encoder_adpcm);
-            ADPCMEncoderBuf2(&mic_data_1ch[I2S_SAMP_PER_FRAME * 3 / 4], (char*)(&send_array[TRANSMIT_DATA_LENGTH * 3 / 4]), &encoder_adpcm);
 
+            send_array[TRANSMIT_DATA_LENGTH - 4] = (uint8_t)(counter_packet_send >> 24);
+            send_array[TRANSMIT_DATA_LENGTH - 3] = (uint8_t)(counter_packet_send >> 16);
+            send_array[TRANSMIT_DATA_LENGTH - 2] = (uint8_t)(counter_packet_send >> 8);
+            send_array[TRANSMIT_DATA_LENGTH - 1] = (uint8_t)(counter_packet_send);
 
             timestamp_encode_stop =  GPTimerCC26XX_getValue(measure_tim_hdl);
             timestamp_encode_dif = timestamp_encode_stop - timestamp_encode_start;
-//            swap_array(send_array);
+
             status = DataService_SetParameter(DS_STREAM_OUTPUT_ID, DS_STREAM_OUTPUT_LEN, send_array);
             if((status != SUCCESS) || (status == 0x15))
             {
@@ -540,8 +548,10 @@ void USER_task_Handler (pzMsg_t *pMsg)
             }
             counter_packet_send++;
             #ifdef  UART_DEBUG
-                memcpy(&uart_data_send[1],                          mic_data_1ch,      sizeof(mic_data_1ch));
-                memcpy(&uart_data_send[I2S_SAMP_PER_FRAME + 1],     raw_data_received,     sizeof(raw_data_received));
+                memcpy(&uart_data_send[1],                            mic_data_1ch,      sizeof(mic_data_1ch));
+                memcpy(&uart_data_send[I2S_SAMP_PER_FRAME + 1],       raw_data_received,     sizeof(raw_data_received));
+                memcpy(&uart_data_send[I2S_SAMP_PER_FRAME*2 + 1],     &ima_Encode_state,     sizeof(ima_Encode_state));
+                memcpy(&uart_data_send[I2S_SAMP_PER_FRAME*2 + 1 + 4], &ima_Decode_state,     sizeof(ima_Decode_state));
                 //memcpy(&uart_data_send[I2S_SAMP_PER_FRAME * 2 + 1], raw_data_received, sizeof(raw_data_received));
                 uart_data_send[0]= (40u << 8u) + 41u;   //start bytes for MATLAB ")("
                 UART_write(uart, uart_data_send, sizeof(uart_data_send));
@@ -577,15 +587,26 @@ void USER_task_Handler (pzMsg_t *pMsg)
         }
         break;
 
-        case PZ_APP_MSG_Read_ADC_Voltage:
+        case PZ_APP_MSG_Read_ADC_Battery_Voltage:
         {
             adc_conversion.adcChannel = ADC_VOLTAGE_MEASURE_PIN;
             button_check = FALSE;
-            if (ADCBuf_convert(adc_hdl, &adc_conversion, 1) != ADCBuf_STATUS_SUCCESS) {
+            if (ADCBuf_convert(adc_hdl, &adc_conversion, 1) != ADCBuf_STATUS_SUCCESS)
+            {
                 while(1);
             }
             /* return Power button monitor ADC channel after ADC_SWITCH_TIMEOUT*/
             Util_startClock((Clock_Struct *)ADC_ChannelSwitchClockHandle);
+        }
+        break;
+
+        case PZ_APP_MSG_Read_ADC_Power_Button_Voltage:
+        {
+            adc_conversion.adcChannel = ADC_POWER_BUTTON_PIN;
+            if (ADCBuf_convert(adc_hdl, &adc_conversion, 1) != ADCBuf_STATUS_SUCCESS)
+            {
+                while(1);
+            }
         }
         break;
 

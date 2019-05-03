@@ -3,9 +3,9 @@
  *
  * Code generated for Simulink model 'LPF'.
  *
- * Model version                  : 1.76
- * Simulink Coder version         : 8.13 (R2017b) 24-Jul-2017
- * C/C++ source code generated on : Sat Mar 30 14:49:02 2019
+ * Model version                  : 1.79
+ * Simulink Coder version         : 9.1 (R2019a) 23-Nov-2018
+ * C/C++ source code generated on : Tue Apr 30 20:55:57 2019
  *
  * Target selection: ert.tlc
  * Embedded hardware selection: ARM Compatible->ARM Cortex
@@ -17,54 +17,46 @@
 
 #ifndef RTW_HEADER_LPF_h_
 #define RTW_HEADER_LPF_h_
-#include "rtwtypes.h"
 #ifndef LPF_COMMON_INCLUDES_
 # define LPF_COMMON_INCLUDES_
 #include "rtwtypes.h"
 #endif                                 /* LPF_COMMON_INCLUDES_ */
 
 /* Macros for accessing real-time model data structure */
-#ifndef SS_INT64
-#define SS_INT64                       17
-#endif
 
-#ifndef SS_UINT64
-#define SS_UINT64                      18
-#endif
-
-/* Block signals and states (auto storage) for system '<Root>' */
+/* Block signals and states (default storage) for system '<Root>' */
 typedef struct {
-  int16_T Filter1_states[19];          /* '<Root>/Filter1' */
+  int16_T Filter1_states[9];           /* '<Root>/Filter1' */
 } DW;
 
-/* Constant parameters (auto storage) */
+/* Constant parameters (default storage) */
 typedef struct {
   /* Computed Parameter: Filter1_Coefficients
    * Referenced by: '<Root>/Filter1'
    */
-  int16_T Filter1_Coefficients[20];
+  int16_T Filter1_Coefficients[10];
 } ConstP;
 
-/* External inputs (root inport signals with auto storage) */
+/* External inputs (root inport signals with default storage) */
 typedef struct {
   int16_T In1;                         /* '<Root>/In1' */
 } ExtU;
 
-/* External outputs (root outports fed by signals with auto storage) */
+/* External outputs (root outports fed by signals with default storage) */
 typedef struct {
   int16_T Out1;                        /* '<Root>/Out1' */
 } ExtY;
 
-/* Block signals and states (auto storage) */
+/* Block signals and states (default storage) */
 extern DW rtDW;
 
-/* External inputs (root inport signals with auto storage) */
+/* External inputs (root inport signals with default storage) */
 extern ExtU rtU;
 
-/* External outputs (root outports fed by signals with auto storage) */
+/* External outputs (root outports fed by signals with default storage) */
 extern ExtY rtY;
 
-/* Constant parameters (auto storage) */
+/* Constant parameters (default storage) */
 extern const ConstP rtConstP;
 
 /* Model entry point functions */

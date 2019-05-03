@@ -142,3 +142,9 @@ uint32_t get_bat_voltage(void)
 {
     return ((AONBatMonBatteryVoltageGet() * 125) >> 5);
 }
+
+
+void power_off (void)
+{
+    PIN_setOutputValue(powerPinHandle, CC26X2R1_LAUNCHXL_PIN_POWER, POWER_OFF);
+}

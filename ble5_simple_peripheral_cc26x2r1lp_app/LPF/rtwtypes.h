@@ -3,9 +3,9 @@
  *
  * Code generated for Simulink model 'LPF'.
  *
- * Model version                  : 1.76
- * Simulink Coder version         : 8.13 (R2017b) 24-Jul-2017
- * C/C++ source code generated on : Sat Mar 30 14:49:02 2019
+ * Model version                  : 1.79
+ * Simulink Coder version         : 9.1 (R2019a) 23-Nov-2018
+ * C/C++ source code generated on : Tue Apr 30 20:55:57 2019
  *
  * Target selection: ert.tlc
  * Embedded hardware selection: ARM Compatible->ARM Cortex

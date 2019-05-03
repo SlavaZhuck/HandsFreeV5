@@ -57,6 +57,7 @@
 
 #include <icall.h>
 #include "hal_assert.h"
+#include "power_battery.h"
 #include "bcomdef.h"
 #include "project_zero.h"
 #ifdef PTM_MODE
@@ -207,6 +208,7 @@ void AssertHandler(uint8 assertCause, uint8 assertSubcause)
 
 //  Display_print0(dispHandle, 0, 0, ">>>STACK ASSERT");
 
+  power_off();
   // check the assert cause
   switch (assertCause)
   {
@@ -252,7 +254,6 @@ void AssertHandler(uint8 assertCause, uint8 assertSubcause)
 //      Display_print0(dispHandle, 2, 0, ">> DEFAULT SPINLOCK!");
       HAL_ASSERT_SPINLOCK;
   }
-
   return;
 }
 

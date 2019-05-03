@@ -8,7 +8,7 @@
 #ifndef POWER_BATTERY_H_
 #define POWER_BATTERY_H_
     /******ADC Start ******/
-#define ADC_SWITCH_TIMEOUT      500 //ms
+#define ADC_SWITCH_TIMEOUT      50 //ms
 #define ADCBUFSIZE      1
 #define SAMPFREQ        10000
 #define ADC_VOLTAGE_MEASURE_PIN   CC26X2R1_LAUNCHXL_ADCBUF0CHANNEL5
@@ -21,5 +21,6 @@
 
 
 void power_battery_init (void);
+void power_off (void);
 uint32_t get_bat_voltage(void);
 #endif /* POWER_BATTERY_H_ */

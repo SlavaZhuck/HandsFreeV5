@@ -3,9 +3,9 @@
  *
  * Code generated for Simulink model 'LPF'.
  *
- * Model version                  : 1.76
- * Simulink Coder version         : 8.13 (R2017b) 24-Jul-2017
- * C/C++ source code generated on : Sat Mar 30 14:49:02 2019
+ * Model version                  : 1.79
+ * Simulink Coder version         : 9.1 (R2019a) 23-Nov-2018
+ * C/C++ source code generated on : Tue Apr 30 20:55:57 2019
  *
  * Target selection: ert.tlc
  * Embedded hardware selection: ARM Compatible->ARM Cortex
@@ -64,28 +64,15 @@ Verification pane for ERT based targets, which will disable the \
 preprocessor word size checks.
 #endif
 
-#if 0
+/* Skipping ulong_long/long_long check: insufficient preprocessor integer range. */
 
-/* Skip this size verification because of preprocessor limitation */
-#if ( ULLONG_MAX != (0xFFFFFFFFFFFFFFFFULL) ) || ( LLONG_MAX != (0x7FFFFFFFFFFFFFFFLL) )
-#error Code was generated for compiler with different sized ulong_long/long_long. \
-Consider adjusting Test hardware word size settings on the \
-Hardware Implementation pane to match your compiler word sizes as \
-defined in limits.h of the compiler. Alternatively, you can \
-select the Test hardware is the same as production hardware option and \
-select the Enable portable word sizes option on the Code Generation > \
-Verification pane for ERT based targets, which will disable the \
-preprocessor word size checks.
-#endif
-#endif
-
-/* Block signals and states (auto storage) */
+/* Block signals and states (default storage) */
 DW rtDW;
 
-/* External inputs (root inport signals with auto storage) */
+/* External inputs (root inport signals with default storage) */
 ExtU rtU;
 
-/* External outputs (root outports fed by signals with auto storage) */
+/* External outputs (root outports fed by signals with default storage) */
 ExtY rtY;
 
 /* Model step function */
@@ -99,22 +86,8 @@ void LPF_step(void)
    *  Inport: '<Root>/In1'
    */
   /* Consume delay line and beginning of input samples */
-  acc1 = 0LL;
-  j = 0;
-  while (j < 1) {
-    q1 = rtU.In1 * rtConstP.Filter1_Coefficients[0];
-    if ((acc1 < 0LL) && (q1 < MIN_int64_T - acc1)) {
-      acc1 = MIN_int64_T;
-    } else if ((acc1 > 0LL) && (q1 > MAX_int64_T - acc1)) {
-      acc1 = MAX_int64_T;
-    } else {
-      acc1 += q1;
-    }
-
-    j = 1;
-  }
-
-  for (j = 0; j < 19; j++) {
+  acc1 = rtU.In1 * rtConstP.Filter1_Coefficients[0];
+  for (j = 0; j < 9; j++) {
     q1 = rtConstP.Filter1_Coefficients[1 + j] * rtDW.Filter1_states[j];
     if ((acc1 < 0LL) && (q1 < MIN_int64_T - acc1)) {
       acc1 = MIN_int64_T;
@@ -125,8 +98,8 @@ void LPF_step(void)
     }
   }
 
-  acc1 = (((acc1 & 32768LL) != 0LL) && (((acc1 & 32767LL) != 0LL) || (acc1 > 0LL)))
-    + (acc1 >> 16);
+  acc1 = (((acc1 & 32768ULL) != 0ULL) && (((acc1 & 32767ULL) != 0ULL) || (acc1 >
+            0LL))) + (acc1 >> 16);
   if (acc1 > 32767LL) {
     acc1 = 32767LL;
   } else {
@@ -136,7 +109,7 @@ void LPF_step(void)
   }
 
   /* Update delay line for next frame */
-  for (j = 17; j >= 0; j--) {
+  for (j = 7; j >= 0; j--) {
     rtDW.Filter1_states[1 + j] = rtDW.Filter1_states[j];
   }
 

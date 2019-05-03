@@ -130,9 +130,10 @@ extern "C"
 #define PZ_SEND_START_STREAM_EVT 11  /* Connection Event End notice                 */
 #define PZ_SEND_STOP_STREAM_EVT  12  /* Connection Event End notice                 */
 #define PZ_I2C_Read_status_EVT   13  /* Connection Event End notice                 */
-#define PZ_APP_MSG_Read_ADC_Voltage   14  /* Connection Event End notice                 */
-#define PZ_APP_MSG_Load_vol      15  /* Connection Event End notice                 */
-#define PZ_APP_MSG_Write_vol     16  /* Connection Event End notice                 */
+#define PZ_APP_MSG_Read_ADC_Battery_Voltage   14  /* Connection Event End notice                 */
+#define PZ_APP_MSG_Read_ADC_Power_Button_Voltage   15  /* Connection Event End notice                 */
+#define PZ_APP_MSG_Load_vol      16  /* Connection Event End notice                 */
+#define PZ_APP_MSG_Write_vol     17  /* Connection Event End notice                 */
 
 
 // General discoverable mode: advertise indefinitely
