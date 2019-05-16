@@ -10,7 +10,6 @@
 #include "max9860_i2c.h"
 #include "I2S/I2SCC26XX.h"
 #include <ti/sysbios/family/arm/m3/Hwi.h>
-#include "codec/SitADPCM.h"
 #include "ima_codec/ima.h"
 #include <ti/sysbios/knl/Mailbox.h>
 #include "Uart_Parser.h"
@@ -35,7 +34,15 @@ GPTimerCC26XX_Handle measure_tim_hdl = NULL;
 GPTimerCC26XX_Handle samp_tim_hdl = NULL;
 GPTimerCC26XX_Value load_val[2] = {LOW_STATE_TIME, HIGH_STATE_TIME};
 /*********************************************************************/
-
+uint8_t  keyMaterial[16]      = {0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6,
+                                       0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf, 0x4f, 0x3c};
+/* CryptoKey storage */
+CryptoKey           cryptoKey;
+/* AESCBC variables */
+AESCBC_Operation    operationOneStepEncrypt;
+AESCBC_Operation    operationOneStepDecrypt;
+AESCBC_Handle       AESCBCHandle;
+uint8_t temp_crypto[V_STREAM_OUTPUT_SOUND_LEN + 3];
 /* Debug time variables ***************************************************/
 GPTimerCC26XX_Value timestamp_encode_start;
 GPTimerCC26XX_Value timestamp_encode_stop;
@@ -75,7 +82,7 @@ extern ADCBuf_Handle adc_hdl;
 UART_Handle uart;
 static UART_Params uartParams;
 
-uint8_t macAddress[6];
+uint8_t macAddress[MAC_SIZE];
 static uint32_t wantedRxBytes = WANTED_RX_BYTES;            // Number of bytes received so far
 static uint8_t rxBuf[MAX_NUM_RX_BYTES];   // Receive buffer
 
@@ -84,15 +91,22 @@ static uint8_t rxBuf[MAX_NUM_RX_BYTES];   // Receive buffer
 int16_t uart_data_send[I2S_SAMP_PER_FRAME * 2 + 1 + 8]; // 2 buffers, start bytes, 2 ima_coder states
 #endif
 /******Uart End ******/
-void swap_array (int8_t *swap_arr);
 static void readCallback(UART_Handle handle, void *rxBuf, size_t size);
 static void writeCallback(UART_Handle handle_uart, void *rxBuf, size_t size);
 
 static void bufRdy_callback(I2SCC26XX_Handle handle, I2SCC26XX_StreamNotification *pStreamNotification);
 static void AudioDuplex_enableCache();
 static void AudioDuplex_disableCache();
+static void encrypt_packet(uint8_t *packet);
+static void decrypt_packet(uint8_t *packet);
 
+uint8_t write_aes_key(uint8_t *key);
+uint8_t read_aes_key(uint8_t *key);
 
+static uint8_t received_SID[SID_LENGTH] = {0};
+struct event_indicator_struct_BUF_status event_BUF_status_message;
+struct event_indicator_struct_BLE event_BLE_message;
+static void update_UART_Messages (uint8_t message_type);
 /* I2C variables *****************************************************/
 static uint16_t i2c_read_delay;
 /*********************************************************************/
@@ -106,6 +120,7 @@ uint32_t counter_packet_send = 0;
 uint32_t counter_packet_received = 0;
 float packet_lost = 0;
 uint32_t error_counter_packet_send = 0;
+uint8_t send_status = 0;
 
 uint8_t send_array[DS_STREAM_OUTPUT_LEN];
 uint8_t current_volume = INIT_GAIN;
@@ -143,6 +158,8 @@ bool gotBufferInOut = false;
 bool gotBufferOut = false;
 
 extern bool button_check;
+uint8_t key[KEY_SIZE] = {0x2B, 0x7E, 0x15, 0x16, 0x28, 0xAE, 0xD2, 0xA6,
+                        0xAB, 0xF7, 0x15, 0x88, 0x09, 0xCF, 0x4F, 0x3C};
 
 
 
@@ -154,7 +171,6 @@ static uint8_t mailpost_usage;
 extern pzConnRec_t connList[MAX_NUM_BLE_CONNS];
 extern bool connection_occured;
 extern List_List paramUpdateList;
-static struct ADPCMstate encoder_adpcm, decoder_adpcm;
 
 
 static ima_state ima_Encode_state;
@@ -244,11 +260,17 @@ void stop_voice_handle(void)
     /* save current volume level */
     //ProjectZero_enqueueMsg(PZ_APP_MSG_Write_vol, NULL);
     osal_snv_write(INIT_VOL_ADDR, 1, &current_volume);
+    memset(received_SID, 0, SID_LENGTH);
+    memset(&event_BLE_message, 0, sizeof(event_BLE_message)) ;
+    memset(&event_BUF_status_message, 0, sizeof(event_BUF_status_message)) ;
+
 }
 
 
 void HandsFree_init (void)
 {
+    buttons_init();
+    power_battery_init();
 #ifdef LPF
     LPF_initialize();
 #endif
@@ -339,9 +361,46 @@ void HandsFree_init (void)
     UART_write(uart, macAddress, sizeof(macAddress));
     int rxBytes = UART_read(uart, rxBuf, wantedRxBytes);
 
+   AESCBC_init();
+    /* Open AESCCM_open */
+    AESCBCHandle = AESCBC_open(0, NULL);
 
-    buttons_init();
-    power_battery_init();
+    if (!AESCBCHandle) {
+        /* AESECM_open_open() failed */
+        while(1);
+    }
+    /* Initialize the key structure */
+    CryptoKeyPlaintext_initKey(&cryptoKey, (uint8_t*) keyMaterial, sizeof(keyMaterial));
+//    for(uint16_t j = 0; j< 100; j++)
+//    {
+//        for(uint16_t i = 0; i< sizeof(temp_crypto); i++)
+//        {
+//            temp_crypto[i] = i + j;
+//        }
+//        {
+//            encrypt_packet(temp_crypto);
+//
+//            decrypt_packet(temp_crypto);
+//            uint16_t o = 2;
+//            while (o > 0) {
+//                o--;
+//            }
+//        }
+//    }
+    for(uint16_t i = 0 ; i < sizeof(event_BUF_status_message.MAC_addr) ; i++)
+    {
+        event_BUF_status_message.MAC_addr[i] = macAddress[i];
+        event_BLE_message.MAC_addr[i] = macAddress[i];
+    }
+     event_BUF_status_message.null_terminator = 0x00;
+     event_BLE_message.null_terminator = 0x00;
+     event_BUF_status_message.message_type = RECEIVE_BUFFER_STATUS;
+
+     /* BLE optimization */
+     HCI_EXT_OverlappedProcessingCmd(HCI_EXT_ENABLE_OVERLAPPED_PROCESSING);
+     HCI_EXT_HaltDuringRfCmd( HCI_EXT_HALT_DURING_RF_DISABLE ); //Enable CPU during RF events (scan included) - may increase power consumption
+     HCI_EXT_ClkDivOnHaltCmd( HCI_EXT_DISABLE_CLK_DIVIDE_ON_HALT ); //Set whether the system clock will be divided when the MCU is halted. - may increase power consumption
+     HCI_EXT_SetFastTxResponseTimeCmd(HCI_EXT_ENABLE_FAST_TX_RESP_TIME); // configure the Link Layer fast transmit response time feature
 }
 
 
@@ -453,22 +512,16 @@ void USER_task_Handler (pzMsg_t *pMsg)
                 Mailbox_pend(mailbox, packet_data, BIOS_NO_WAIT);
 
                 timestamp_decode_start =  GPTimerCC26XX_getValue(measure_tim_hdl);
-//                decoder_adpcm.prevsample = ((int16_t)(packet_data[V_STREAM_OUTPUT_SOUND_LEN]) << 8) |
-//                        (int16_t)(packet_data[V_STREAM_OUTPUT_SOUND_LEN + 1]);
-//
-//                decoder_adpcm.previndex = ((int32_t)(packet_data[V_STREAM_OUTPUT_SOUND_LEN + 2]));
-//                ADPCMDecoderBuf2((char*)(packet_data), raw_data_received, &decoder_adpcm);
-//                ADPCMDecoderBuf2((char*)(&packet_data[TRANSMIT_DATA_LENGTH / 4]), &raw_data_received[I2S_SAMP_PER_FRAME / 4], &decoder_adpcm);
-//                ADPCMDecoderBuf2((char*)(&packet_data[TRANSMIT_DATA_LENGTH / 2]), &raw_data_received[I2S_SAMP_PER_FRAME / 2], &decoder_adpcm);
-//                ADPCMDecoderBuf2((char*)(&packet_data[TRANSMIT_DATA_LENGTH* 3 / 4]), &raw_data_received[I2S_SAMP_PER_FRAME * 3 / 4], &decoder_adpcm);
-
-
+                //decrypt_packet(packet_data);
                 int16_t temp_current = packet_data[V_STREAM_OUTPUT_SOUND_LEN + 1] | packet_data[V_STREAM_OUTPUT_SOUND_LEN] << 8;
+
                 ima_Decode_state.current = (int32_t)temp_current;
                 ima_Decode_state.stepindex = packet_data[V_STREAM_OUTPUT_SOUND_LEN + 2];
                 ima_decode_mono(&ima_Decode_state, raw_data_received, packet_data, FRAME_SIZE);
+
                 timestamp_decode_stop =  GPTimerCC26XX_getValue(measure_tim_hdl);
                 timestamp_decode_dif = timestamp_decode_stop - timestamp_decode_start;
+
                 previous_receive_counter = counter_packet_received;
             #ifdef  LPF
                 timestamp_LPF_start =  GPTimerCC26XX_getValue(measure_tim_hdl);
@@ -519,14 +572,6 @@ void USER_task_Handler (pzMsg_t *pMsg)
             timestamp_encode_start =  GPTimerCC26XX_getValue(measure_tim_hdl);
 
 
-//            ADPCMEncoderBuf2(mic_data_1ch, (char*)(send_array), &encoder_adpcm);
-//            ADPCMEncoderBuf2(&mic_data_1ch[I2S_SAMP_PER_FRAME / 4], (char*)(&send_array[TRANSMIT_DATA_LENGTH/4]), &encoder_adpcm);
-//            ADPCMEncoderBuf2(&mic_data_1ch[I2S_SAMP_PER_FRAME / 2], (char*)(&send_array[TRANSMIT_DATA_LENGTH/2]), &encoder_adpcm);
-//            ADPCMEncoderBuf2(&mic_data_1ch[I2S_SAMP_PER_FRAME * 3 / 4], (char*)(&send_array[TRANSMIT_DATA_LENGTH * 3 / 4]), &encoder_adpcm);
-//
-//            send_array[V_STREAM_OUTPUT_SOUND_LEN] = (uint8_t)(encoder_adpcm.prevsample >> 8);
-//            send_array[V_STREAM_OUTPUT_SOUND_LEN + 1] = (uint8_t)encoder_adpcm.prevsample;
-//            send_array[V_STREAM_OUTPUT_SOUND_LEN + 2] = (uint8_t)encoder_adpcm.previndex;
             send_array[V_STREAM_OUTPUT_SOUND_LEN] =     (uint8_t)(ima_Encode_state.current >> 8);
             send_array[V_STREAM_OUTPUT_SOUND_LEN + 1] = (uint8_t)(ima_Encode_state.current & 0xFF);
             send_array[V_STREAM_OUTPUT_SOUND_LEN + 2] = (uint8_t)ima_Encode_state.stepindex;
@@ -541,11 +586,25 @@ void USER_task_Handler (pzMsg_t *pMsg)
             timestamp_encode_stop =  GPTimerCC26XX_getValue(measure_tim_hdl);
             timestamp_encode_dif = timestamp_encode_stop - timestamp_encode_start;
 
-            status = DataService_SetParameter(DS_STREAM_OUTPUT_ID, DS_STREAM_OUTPUT_LEN, send_array);
-            if((status != SUCCESS) || (status == 0x15))
+            //encrypt_packet(send_array);
+            send_status = DataService_SetParameter(DS_STREAM_OUTPUT_ID, DS_STREAM_OUTPUT_LEN, send_array);
+            if((send_status != SUCCESS)/* || (send_status == 0x15)*/)
             {
                 error_counter_packet_send++;
+                update_UART_Messages(PACKET_SENT_ERROR_TYPE);
+
+                ProjectZero_enqueueMsg(PZ_APP_MSG_Send_message_BLE, NULL);
+                ProjectZero_enqueueMsg(PZ_APP_MSG_Send_message_Buf_Status, NULL);
             }
+            else
+            {
+                update_UART_Messages(PACKET_SENT_MESSAGE_TYPE);
+
+                ProjectZero_enqueueMsg(PZ_APP_MSG_Send_message_BLE, NULL);
+                ProjectZero_enqueueMsg(PZ_APP_MSG_Send_message_Buf_Status, NULL);
+            }
+
+
             counter_packet_send++;
             #ifdef  UART_DEBUG
                 memcpy(&uart_data_send[1],                            mic_data_1ch,      sizeof(mic_data_1ch));
@@ -554,7 +613,7 @@ void USER_task_Handler (pzMsg_t *pMsg)
                 memcpy(&uart_data_send[I2S_SAMP_PER_FRAME*2 + 1 + 4], &ima_Decode_state,     sizeof(ima_Decode_state));
                 //memcpy(&uart_data_send[I2S_SAMP_PER_FRAME * 2 + 1], raw_data_received, sizeof(raw_data_received));
                 uart_data_send[0]= (40u << 8u) + 41u;   //start bytes for MATLAB ")("
-                UART_write(uart, uart_data_send, sizeof(uart_data_send));
+                //UART_write(uart, uart_data_send, sizeof(uart_data_send));
             #endif
             }
             break;
@@ -626,6 +685,19 @@ void USER_task_Handler (pzMsg_t *pMsg)
         }
         break;
 
+        case PZ_APP_MSG_Send_message_BLE:
+        {
+            UART_write(uart, &event_BLE_message, sizeof(event_BLE_message));
+        }
+        break;
+
+        case PZ_APP_MSG_Send_message_Buf_Status:
+        {
+            UART_write(uart, &event_BUF_status_message, sizeof(event_BUF_status_message));
+        }
+        break;
+
+
         default:
         break;
     }
@@ -685,7 +757,7 @@ void ProjectZero_DataService_ValueChangeHandler(
 {
     // Value to hold the received string for printing via Log, as Log printouts
     // happen in the Idle task, and so need to refer to a global/static variable.
-    static uint8_t received_string[DS_STREAM_START_LEN] = {0};
+
 
     switch(pCharData->paramID)
     {
@@ -693,15 +765,24 @@ void ProjectZero_DataService_ValueChangeHandler(
         // Do something useful with pCharData->data here
         // -------------------------
         // Copy received data to holder array, ensuring NULL termination.
-        memset(received_string, 0, DS_STREAM_START_LEN);
-        memcpy(received_string, pCharData->data,
-               MIN(pCharData->dataLen, DS_STREAM_START_LEN - 1));
+        memset(received_SID, 0, SID_LENGTH);
+        memcpy(received_SID, pCharData->data, SID_LENGTH);
+        for(uint16_t i = 0 ; i < sizeof(event_BUF_status_message.SID); i++)
+        {
+            event_BUF_status_message.SID[i] = received_SID[i];
+            event_BLE_message.SID[i] = received_SID[i];
+        }
 
         break;
 
     case DS_STREAM_INPUT_ID:
         Mailbox_post(mailbox, pCharData->data, BIOS_NO_WAIT);
         counter_packet_received++;
+
+        update_UART_Messages(PACKET_RECEIVED_MESSAGE_TYPE);
+
+        ProjectZero_enqueueMsg(PZ_APP_MSG_Send_message_BLE, NULL);
+        ProjectZero_enqueueMsg(PZ_APP_MSG_Send_message_Buf_Status, NULL);
 
         packet_lost = 100.0f * ((float)counter_packet_send - (float)counter_packet_received) / (float)counter_packet_send;
         // -------------------------
@@ -712,6 +793,18 @@ void ProjectZero_DataService_ValueChangeHandler(
         return;
     }
 }
+
+static void update_UART_Messages (uint8_t message_type)
+{
+    uint32_t timestamp = GPTimerCC26XX_getValue(measure_tim_hdl);
+    event_BLE_message.message_type = message_type;
+    event_BLE_message.packet_number = counter_packet_received;
+    event_BLE_message.timestamp = timestamp;
+
+    event_BUF_status_message.buff_status = Mailbox_getNumPendingMsgs(mailbox);
+    event_BUF_status_message.timestamp = timestamp;
+}
+
 
 static void bufRdy_callback(I2SCC26XX_Handle handle, I2SCC26XX_StreamNotification *pStreamNotification)
 {
@@ -784,23 +877,79 @@ static void readCallback(UART_Handle handle, void *rxBuf, size_t size)
 }
 
 
-void swap_array (int8_t *swap_arr)
+static void encrypt_packet(uint8_t *packet)
 {
-    int8_t temp;
-    temp = swap_arr[163];
-    swap_arr[163] = swap_arr[43];
-    swap_arr[43] = temp;
+    int_fast16_t status;
+    uint8_t tmp_packet[V_STREAM_OUTPUT_SOUND_LEN + 3];
+    memcpy(tmp_packet, packet, V_STREAM_OUTPUT_SOUND_LEN + 3);
 
-    temp = swap_arr[164];
-    swap_arr[164] = swap_arr[44];
-    swap_arr[44] = temp;
+//    status = CryptoKeyPlaintext_initKey(&cryptoKey, (uint8_t*) key, KEY_SIZE);
+//    if(status != CryptoKey_STATUS_SUCCESS)
+//    {
+//        while(1);
+//    }
 
-    temp = swap_arr[165];
-    swap_arr[165] = swap_arr[45];
-    swap_arr[45] = temp;
+    /* Perform a single step encrypt operation of the plain text */
+    AESCBC_Operation_init(&operationOneStepEncrypt);
+    operationOneStepEncrypt.key            = &cryptoKey;
+    operationOneStepEncrypt.input          = packet;
+    operationOneStepEncrypt.output         = tmp_packet;
+    operationOneStepEncrypt.inputLength    = V_STREAM_OUTPUT_SOUND_LEN + 3;
 
-    temp = swap_arr[166];
-    swap_arr[166] = swap_arr[46];
-    swap_arr[46] = temp;
+    status = AESCBC_oneStepEncrypt(AESCBCHandle, &operationOneStepEncrypt);
 
+    if(status != AESCBC_STATUS_SUCCESS)
+    {
+        while(1);
+    }
+    memcpy(packet, tmp_packet, V_STREAM_OUTPUT_SOUND_LEN + 3);
+}
+
+static void decrypt_packet(uint8_t *packet)
+{
+    int_fast16_t status;
+    uint8_t tmp_packet[V_STREAM_OUTPUT_SOUND_LEN + 3];
+    memcpy(tmp_packet, packet, V_STREAM_OUTPUT_SOUND_LEN + 3);
+
+//    status = CryptoKeyPlaintext_initKey(&cryptoKey, (uint8_t*) key, KEY_SIZE);
+//    if(status != CryptoKey_STATUS_SUCCESS)
+//    {
+//        while(1);
+//    }
+    /* Perform a single step encrypt operation of the plain text */
+    AESCBC_Operation_init(&operationOneStepDecrypt);
+    operationOneStepDecrypt.key            = &cryptoKey;
+    operationOneStepDecrypt.input          = packet;
+    operationOneStepDecrypt.output         = tmp_packet;
+    operationOneStepDecrypt.inputLength    = V_STREAM_OUTPUT_SOUND_LEN + 3;
+
+    status = AESCBC_oneStepDecrypt(AESCBCHandle, &operationOneStepDecrypt);
+
+    if(status != AESCBC_STATUS_SUCCESS)
+    {
+        while(1);
+    }
+    memcpy(packet, tmp_packet, V_STREAM_OUTPUT_SOUND_LEN + 3);
+}
+
+uint8_t read_aes_key(uint8_t *key)
+{
+    uint8_t status;
+    static uint8_t default_key[] =
+        {0x2B, 0x7E, 0x15, 0x16, 0x28, 0xAE, 0xD2, 0xA6,
+        0xAB, 0xF7, 0x15, 0x88, 0x09, 0xCF, 0x4F, 0x3C};
+
+    status = osal_snv_read(KEY_SNV_ID, KEY_SIZE, key);
+    if(status != SUCCESS)
+    {
+        memcpy(key, default_key, KEY_SIZE);
+    }
+
+    return status;
+}
+
+uint8_t write_aes_key(uint8_t *key)
+{
+    CryptoKeyPlaintext_initKey(&cryptoKey, (uint8_t*) key, sizeof(*key));
+    return (osal_snv_write(KEY_SNV_ID, KEY_SIZE, key));
 }

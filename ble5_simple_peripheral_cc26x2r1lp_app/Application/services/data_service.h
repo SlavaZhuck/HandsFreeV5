@@ -72,8 +72,8 @@ extern "C"
 #define DS_STREAM_START_ID                 0
 #define DS_STREAM_START_UUID               0xB001
 #define DS_STREAM_START_UUID_BASE128(uuid) 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xB0, 0x00, 0x40, 0x51, 0x04, LO_UINT16(uuid), HI_UINT16(uuid), 0x00, 0xF0
-#define DS_STREAM_START_LEN                20
-#define DS_STREAM_START_LEN_MIN            20
+#define DS_STREAM_START_LEN                SID_LENGTH
+#define DS_STREAM_START_LEN_MIN            SID_LENGTH
 
 // Stream Characteristic defines
 #define DS_STREAM_INPUT_ID                 1

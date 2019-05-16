@@ -12,12 +12,16 @@
 #include "./services/data_service.h"
 #include "max9860_i2c.h"
 #include <ti/drivers/timer/GPTimerCC26XX.h>
+#include <ti/drivers/AESCBC.h>
+#include <ti/drivers/cryptoutils/cryptokey/CryptoKeyPlaintext.h>
 #include <ti/sysbios/BIOS.h>
 #include <GeneralDef.h>
 
 
-#define I2S_SAMP_PER_FRAME                320
-#define TRANSMIT_DATA_LENGTH              167  //bytes
+#define I2S_SAMP_PER_FRAME                320u
+#define TRANSMIT_DATA_LENGTH              167u  //bytes
+#define SID_LENGTH                        20u   //bytes
+#define MAC_SIZE                          6u   //bytes
 
 #define TMR_PERIOD                          ((48000000UL))
 #define LOW_STATE_TIME                      ((TMR_PERIOD / 10) * 9)
@@ -61,6 +65,10 @@
 
 /******I2S End ******/
 
+#define PACKET_RECEIVED_MESSAGE_TYPE 0u
+#define PACKET_SENT_MESSAGE_TYPE     1u
+#define PACKET_SENT_ERROR_TYPE       2u
+#define RECEIVE_BUFFER_STATUS        3u
 
 void start_voice_handle(void);
 void stop_voice_handle(void);
@@ -71,6 +79,31 @@ void HandsFree_init (void);
 
 void blink_timer_callback(GPTimerCC26XX_Handle handle, GPTimerCC26XX_IntMask interruptMask);
 void samp_timer_callback(GPTimerCC26XX_Handle handle, GPTimerCC26XX_IntMask interruptMask);
+
+
+typedef uint8_t mac_dataType[MAC_SIZE];
+typedef uint8_t sid_dataType[SID_LENGTH];
+
+
+
+
+struct event_indicator_struct_BLE {
+    uint8_t message_type;
+    mac_dataType MAC_addr;
+    sid_dataType SID;
+    uint32_t timestamp;
+    uint32_t packet_number;
+    uint8_t null_terminator ;
+}__attribute__((packed));
+
+struct event_indicator_struct_BUF_status {
+    uint8_t message_type;
+    mac_dataType MAC_addr;
+    sid_dataType SID;
+    uint32_t timestamp;
+    uint8_t buff_status;
+    uint8_t null_terminator;
+}__attribute__((packed));
 
 
 #endif /* APPLICATION_HANDSFREE_H_ */

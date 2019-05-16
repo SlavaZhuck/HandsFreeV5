@@ -134,6 +134,8 @@ extern "C"
 #define PZ_APP_MSG_Read_ADC_Power_Button_Voltage   15  /* Connection Event End notice                 */
 #define PZ_APP_MSG_Load_vol      16  /* Connection Event End notice                 */
 #define PZ_APP_MSG_Write_vol     17  /* Connection Event End notice                 */
+#define PZ_APP_MSG_Send_message_BLE     18  /* Connection Event End notice                 */
+#define PZ_APP_MSG_Send_message_Buf_Status     19  /* Connection Event End notice                 */
 
 
 // General discoverable mode: advertise indefinitely
