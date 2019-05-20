@@ -34,8 +34,6 @@ GPTimerCC26XX_Handle measure_tim_hdl = NULL;
 GPTimerCC26XX_Handle samp_tim_hdl = NULL;
 GPTimerCC26XX_Value load_val[2] = {LOW_STATE_TIME, HIGH_STATE_TIME};
 /*********************************************************************/
-uint8_t  keyMaterial[16]      = {0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6,
-                                       0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf, 0x4f, 0x3c};
 /* CryptoKey storage */
 CryptoKey           cryptoKey;
 /* AESCBC variables */
@@ -100,8 +98,7 @@ static void AudioDuplex_disableCache();
 static void encrypt_packet(uint8_t *packet);
 static void decrypt_packet(uint8_t *packet);
 
-uint8_t write_aes_key(uint8_t *key);
-uint8_t read_aes_key(uint8_t *key);
+
 
 static uint8_t received_SID[SID_LENGTH] = {0};
 struct event_indicator_struct_BUF_status event_BUF_status_message;
@@ -158,7 +155,7 @@ bool gotBufferInOut = false;
 bool gotBufferOut = false;
 
 extern bool button_check;
-uint8_t key[KEY_SIZE] = {0x2B, 0x7E, 0x15, 0x16, 0x28, 0xAE, 0xD2, 0xA6,
+uint8_t global_key[KEY_SIZE] = {0x2B, 0x7E, 0x15, 0x16, 0x28, 0xAE, 0xD2, 0xA6,
                         0xAB, 0xF7, 0x15, 0x88, 0x09, 0xCF, 0x4F, 0x3C};
 
 
@@ -370,37 +367,23 @@ void HandsFree_init (void)
         while(1);
     }
     /* Initialize the key structure */
-    CryptoKeyPlaintext_initKey(&cryptoKey, (uint8_t*) keyMaterial, sizeof(keyMaterial));
-//    for(uint16_t j = 0; j< 100; j++)
-//    {
-//        for(uint16_t i = 0; i< sizeof(temp_crypto); i++)
-//        {
-//            temp_crypto[i] = i + j;
-//        }
-//        {
-//            encrypt_packet(temp_crypto);
-//
-//            decrypt_packet(temp_crypto);
-//            uint16_t o = 2;
-//            while (o > 0) {
-//                o--;
-//            }
-//        }
-//    }
+    read_aes_key(global_key);
+    CryptoKeyPlaintext_initKey(&cryptoKey, (uint8_t*) global_key, sizeof(global_key));
+
     for(uint16_t i = 0 ; i < sizeof(event_BUF_status_message.MAC_addr) ; i++)
     {
         event_BUF_status_message.MAC_addr[i] = macAddress[i];
         event_BLE_message.MAC_addr[i] = macAddress[i];
     }
-     event_BUF_status_message.null_terminator = 0x00;
-     event_BLE_message.null_terminator = 0x00;
-     event_BUF_status_message.message_type = RECEIVE_BUFFER_STATUS;
+    event_BUF_status_message.null_terminator = 0x00;
+    event_BLE_message.null_terminator = 0x00;
+    event_BUF_status_message.message_type = RECEIVE_BUFFER_STATUS;
 
-     /* BLE optimization */
-     HCI_EXT_OverlappedProcessingCmd(HCI_EXT_ENABLE_OVERLAPPED_PROCESSING);
-     HCI_EXT_HaltDuringRfCmd( HCI_EXT_HALT_DURING_RF_DISABLE ); //Enable CPU during RF events (scan included) - may increase power consumption
-     HCI_EXT_ClkDivOnHaltCmd( HCI_EXT_DISABLE_CLK_DIVIDE_ON_HALT ); //Set whether the system clock will be divided when the MCU is halted. - may increase power consumption
-     HCI_EXT_SetFastTxResponseTimeCmd(HCI_EXT_ENABLE_FAST_TX_RESP_TIME); // configure the Link Layer fast transmit response time feature
+    /* BLE optimization */
+//    HCI_EXT_OverlappedProcessingCmd(HCI_EXT_ENABLE_OVERLAPPED_PROCESSING);
+//    HCI_EXT_HaltDuringRfCmd( HCI_EXT_HALT_DURING_RF_DISABLE ); //Enable CPU during RF events (scan included) - may increase power consumption
+//    HCI_EXT_ClkDivOnHaltCmd( HCI_EXT_DISABLE_CLK_DIVIDE_ON_HALT ); //Set whether the system clock will be divided when the MCU is halted. - may increase power consumption
+//    HCI_EXT_SetFastTxResponseTimeCmd(HCI_EXT_ENABLE_FAST_TX_RESP_TIME); // configure the Link Layer fast transmit response time feature
 }
 
 
@@ -413,7 +396,7 @@ void blink_timer_callback(GPTimerCC26XX_Handle handle, GPTimerCC26XX_IntMask int
     {
         ProjectZero_enqueueMsg(PZ_APP_MSG_Read_ADC_Power_Button_Voltage, NULL);
     }
-
+    //battery_voltage = get_bat_voltage();
     if(blink)
     {
         blink = false;
@@ -421,7 +404,6 @@ void blink_timer_callback(GPTimerCC26XX_Handle handle, GPTimerCC26XX_IntMask int
 
         if(!bat_low)
         {
-            battery_voltage = get_bat_voltage();
             bat_low = battery_voltage < BAT_LOW_VOLTAGE;
         }
         else
@@ -512,7 +494,7 @@ void USER_task_Handler (pzMsg_t *pMsg)
                 Mailbox_pend(mailbox, packet_data, BIOS_NO_WAIT);
 
                 timestamp_decode_start =  GPTimerCC26XX_getValue(measure_tim_hdl);
-                //decrypt_packet(packet_data);
+                decrypt_packet(packet_data);
                 int16_t temp_current = packet_data[V_STREAM_OUTPUT_SOUND_LEN + 1] | packet_data[V_STREAM_OUTPUT_SOUND_LEN] << 8;
 
                 ima_Decode_state.current = (int32_t)temp_current;
@@ -586,7 +568,7 @@ void USER_task_Handler (pzMsg_t *pMsg)
             timestamp_encode_stop =  GPTimerCC26XX_getValue(measure_tim_hdl);
             timestamp_encode_dif = timestamp_encode_stop - timestamp_encode_start;
 
-            //encrypt_packet(send_array);
+            encrypt_packet(send_array);
             send_status = DataService_SetParameter(DS_STREAM_OUTPUT_ID, DS_STREAM_OUTPUT_LEN, send_array);
             if((send_status != SUCCESS)/* || (send_status == 0x15)*/)
             {
@@ -880,21 +862,18 @@ static void readCallback(UART_Handle handle, void *rxBuf, size_t size)
 static void encrypt_packet(uint8_t *packet)
 {
     int_fast16_t status;
-    uint8_t tmp_packet[V_STREAM_OUTPUT_SOUND_LEN + 3];
-    memcpy(tmp_packet, packet, V_STREAM_OUTPUT_SOUND_LEN + 3);
+    uint8_t tmp_packet[V_STREAM_OUTPUT_SOUND_LEN + PACKET_CODEC_META_DATA];
+    memset(tmp_packet, 0, V_STREAM_OUTPUT_SOUND_LEN + PACKET_CODEC_META_DATA);
+    memcpy(tmp_packet, packet, V_STREAM_OUTPUT_SOUND_LEN + PACKET_CODEC_META_DATA);
 
-//    status = CryptoKeyPlaintext_initKey(&cryptoKey, (uint8_t*) key, KEY_SIZE);
-//    if(status != CryptoKey_STATUS_SUCCESS)
-//    {
-//        while(1);
-//    }
+    CryptoKeyPlaintext_initKey(&cryptoKey, (uint8_t*) global_key, sizeof(global_key));
 
     /* Perform a single step encrypt operation of the plain text */
     AESCBC_Operation_init(&operationOneStepEncrypt);
     operationOneStepEncrypt.key            = &cryptoKey;
     operationOneStepEncrypt.input          = packet;
     operationOneStepEncrypt.output         = tmp_packet;
-    operationOneStepEncrypt.inputLength    = V_STREAM_OUTPUT_SOUND_LEN + 3;
+    operationOneStepEncrypt.inputLength    = V_STREAM_OUTPUT_SOUND_LEN ;
 
     status = AESCBC_oneStepEncrypt(AESCBCHandle, &operationOneStepEncrypt);
 
@@ -902,26 +881,35 @@ static void encrypt_packet(uint8_t *packet)
     {
         while(1);
     }
-    memcpy(packet, tmp_packet, V_STREAM_OUTPUT_SOUND_LEN + 3);
+    memcpy(packet, tmp_packet, V_STREAM_OUTPUT_SOUND_LEN);
+
+    AESCBC_Operation_init(&operationOneStepEncrypt);
+    operationOneStepEncrypt.key            = &cryptoKey;
+    operationOneStepEncrypt.input          = &tmp_packet[147];
+    operationOneStepEncrypt.output         = &packet[147];
+    operationOneStepEncrypt.inputLength    = KEY_SIZE ;
+
+    status = AESCBC_oneStepEncrypt(AESCBCHandle, &operationOneStepEncrypt);
+
+    if(status != AESCBC_STATUS_SUCCESS)
+    {
+        while(1);
+    }
 }
 
 static void decrypt_packet(uint8_t *packet)
 {
     int_fast16_t status;
-    uint8_t tmp_packet[V_STREAM_OUTPUT_SOUND_LEN + 3];
-    memcpy(tmp_packet, packet, V_STREAM_OUTPUT_SOUND_LEN + 3);
+    uint8_t tmp_packet[V_STREAM_OUTPUT_SOUND_LEN + PACKET_CODEC_META_DATA];
+    memcpy(tmp_packet, packet, V_STREAM_OUTPUT_SOUND_LEN + PACKET_CODEC_META_DATA);
 
-//    status = CryptoKeyPlaintext_initKey(&cryptoKey, (uint8_t*) key, KEY_SIZE);
-//    if(status != CryptoKey_STATUS_SUCCESS)
-//    {
-//        while(1);
-//    }
-    /* Perform a single step encrypt operation of the plain text */
+    CryptoKeyPlaintext_initKey(&cryptoKey, (uint8_t*) global_key, sizeof(global_key));
+
     AESCBC_Operation_init(&operationOneStepDecrypt);
     operationOneStepDecrypt.key            = &cryptoKey;
-    operationOneStepDecrypt.input          = packet;
-    operationOneStepDecrypt.output         = tmp_packet;
-    operationOneStepDecrypt.inputLength    = V_STREAM_OUTPUT_SOUND_LEN + 3;
+    operationOneStepDecrypt.input          = &packet[147];
+    operationOneStepDecrypt.output         = &tmp_packet[147];
+    operationOneStepDecrypt.inputLength    = KEY_SIZE;
 
     status = AESCBC_oneStepDecrypt(AESCBCHandle, &operationOneStepDecrypt);
 
@@ -929,7 +917,21 @@ static void decrypt_packet(uint8_t *packet)
     {
         while(1);
     }
-    memcpy(packet, tmp_packet, V_STREAM_OUTPUT_SOUND_LEN + 3);
+    memcpy(packet, tmp_packet, V_STREAM_OUTPUT_SOUND_LEN + PACKET_CODEC_META_DATA);
+
+    AESCBC_Operation_init(&operationOneStepDecrypt);
+    operationOneStepDecrypt.key            = &cryptoKey;
+    operationOneStepDecrypt.input          = tmp_packet;
+    operationOneStepDecrypt.output         = packet;
+    operationOneStepDecrypt.inputLength    = V_STREAM_OUTPUT_SOUND_LEN;
+
+    status = AESCBC_oneStepDecrypt(AESCBCHandle, &operationOneStepDecrypt);
+
+    if(status != AESCBC_STATUS_SUCCESS)
+    {
+        while(1);
+    }
+
 }
 
 uint8_t read_aes_key(uint8_t *key)
@@ -942,7 +944,7 @@ uint8_t read_aes_key(uint8_t *key)
     status = osal_snv_read(KEY_SNV_ID, KEY_SIZE, key);
     if(status != SUCCESS)
     {
-        memcpy(key, default_key, KEY_SIZE);
+        memcpy(global_key, default_key, KEY_SIZE);
     }
 
     return status;

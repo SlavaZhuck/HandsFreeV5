@@ -32,7 +32,9 @@
 
 #define SAMP_TIME                         (TMR_PERIOD * (SAMP_PERIOD / 1000.0f) - 1)
 //#define SAMP_TIME                          (4799999/4)
-#define V_STREAM_OUTPUT_SOUND_LEN                (TRANSMIT_DATA_LENGTH - 7)// - 7
+#define PACKET_CODEC_META_DATA                   (3u)
+#define PACKET_PACKET_NUMBER_LENGHT              (4u)
+#define V_STREAM_OUTPUT_SOUND_LEN                (TRANSMIT_DATA_LENGTH - PACKET_CODEC_META_DATA - PACKET_PACKET_NUMBER_LENGHT )// - 7
 
 
 #define MAILBOX_DEPTH       10
@@ -85,7 +87,8 @@ typedef uint8_t mac_dataType[MAC_SIZE];
 typedef uint8_t sid_dataType[SID_LENGTH];
 
 
-
+extern uint8_t read_aes_key(uint8_t *key);
+extern uint8_t write_aes_key(uint8_t *key);
 
 struct event_indicator_struct_BLE {
     uint8_t message_type;
