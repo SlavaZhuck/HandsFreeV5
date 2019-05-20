@@ -27,6 +27,7 @@ void calcCRC_andSend(void){
     Tx_Data.CRC = calculated_CRC_TX;
     UART_writeCancel(uart);
     UART_write(uart, &Tx_Data, Tx_Data.data_lenght+4);
+    UART_writeCancel(uart);
     UART_write(uart, &Tx_Data.CRC, 2);
 }
 
@@ -55,7 +56,7 @@ void send_fh_cr_tp(void){   //TODO
         send_answer_for_command(REC_ERROR) ;
     }
 }
-//extern int16_t batt_voltage[];
+extern int16_t batt_voltage[];
 
 void get_fh_param(void){
     //readMacfunction TODO
@@ -68,23 +69,22 @@ void get_fh_param(void){
     }
 
 
-    //uint16_t voltage = get_bat_voltage();
-    //uint16_t voltage = batt_voltage[0];
-//    Tx_Data.data[6]= voltage>>8;
-//    Tx_Data.data[7]= voltage & 0x00ff;
+    uint16_t voltage = batt_voltage[0];
+    Tx_Data.data[6]= voltage>>8;
+    Tx_Data.data[7]= voltage & 0x00ff;
 
     Tx_Data.command = SEND_FH_PARAM ;
     calcCRC_andSend();
 }
 
-extern uint8_t key[];
+extern uint8_t global_key[];
 
 void send_fh_key (void){
 
     clear_Tx_packet();
 
     if(!write_aes_key(&Rx_Data.data)){
-        read_aes_key(&key);//read key to make it work at time of write action
+        read_aes_key(global_key);//read key to make it work at time of write action
         send_answer_for_command(REC_OK);
     }else{
         send_answer_for_command(REC_ERROR) ;
@@ -95,10 +95,10 @@ void get_fh_key(void){
 
     clear_Tx_packet();
 
-    if(!read_aes_key(&key)){
+    if(!read_aes_key(global_key)){
         Tx_Data.data_lenght = KEY_SIZE;
         for(uint8_t i = 0 ;i<KEY_SIZE;i++){
-            Tx_Data.data[i]=key[i];
+            Tx_Data.data[i]=global_key[i];
         }
         Tx_Data.command = SEND_FH_KEY ;
         calcCRC_andSend();

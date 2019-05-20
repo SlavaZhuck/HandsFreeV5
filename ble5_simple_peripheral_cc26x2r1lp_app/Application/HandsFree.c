@@ -641,6 +641,20 @@ void USER_task_Handler (pzMsg_t *pMsg)
         }
         break;
 
+        case PZ_APP_MSG_Read_ADC_Battery_Voltage_UART:
+        {
+            adc_conversion.adcChannel = ADC_VOLTAGE_MEASURE_PIN;
+            button_check = FALSE;
+            if (ADCBuf_convert(adc_hdl, &adc_conversion, 1) != ADCBuf_STATUS_SUCCESS)
+            {
+                while(1);
+            }
+            /* return Power button monitor ADC channel after ADC_SWITCH_TIMEOUT*/
+            Util_startClock((Clock_Struct *)ADC_ChannelSwitchClockHandle);
+            get_fh_param();
+        }
+        break;
+
         case PZ_APP_MSG_Read_ADC_Power_Button_Voltage:
         {
             adc_conversion.adcChannel = ADC_POWER_BUTTON_PIN;
@@ -679,7 +693,13 @@ void USER_task_Handler (pzMsg_t *pMsg)
         }
         break;
 
+        case PZ_APP_MSG_Read_key:
+            get_fh_key();
+        break;
 
+        case PZ_APP_MSG_Write_key:
+            send_fh_key();
+        break;
         default:
         break;
     }

@@ -203,7 +203,7 @@ uint16_t PackProcessing(void){
         break;}
 
         case SEND_FH_KEY :{//send encryption key
-			//user_enqueueRawAppMsg(APP_MSG_Write_key, &uart_val, 1);
+            ProjectZero_enqueueMsg(PZ_APP_MSG_Write_key, NULL);
 
 
         break;}
@@ -215,13 +215,12 @@ uint16_t PackProcessing(void){
         break;}
 
         case GET_FH_PARAM :{//get mac address
-            //user_enqueueRawAppMsg(APP_MSG_Read_ADC_Voltage, &adc_val, 1);
-            get_fh_param();
+            ProjectZero_enqueueMsg(PZ_APP_MSG_Read_ADC_Battery_Voltage_UART, NULL);
 
         break;}
 
         case GET_FH_KEY :{//get encryption key
-           // user_enqueueRawAppMsg(APP_MSG_Read_key, &uart_val, 1);
+            ProjectZero_enqueueMsg(PZ_APP_MSG_Read_key, NULL);
 
 
         break;}
