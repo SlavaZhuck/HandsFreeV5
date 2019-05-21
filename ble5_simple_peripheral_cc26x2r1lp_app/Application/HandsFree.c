@@ -4,6 +4,8 @@
  *  Created on: 24 янв. 2019 г.
  *      Author: CIT_007
  */
+#include <stdint.h>
+#include <stdlib.h>
 #include "HandsFree.h"
 #include "Noise_TRSH.h"
 #include "Uart_commands.h"
@@ -26,7 +28,10 @@
   #include "../LPF/rtwtypes.h"
 #endif
 
-#define ABS(a) (((a)<0)?-(a):a)
+
+#ifdef  LOGGING
+#define BASE64_SIZE(x)  (((x)+2) / 3 * 4 + 1)
+#endif
 /* Timer variables ***************************************************/
 GPTimerCC26XX_Params tim_params;
 GPTimerCC26XX_Handle blink_tim_hdl = NULL;
@@ -99,11 +104,16 @@ static void encrypt_packet(uint8_t *packet);
 static void decrypt_packet(uint8_t *packet);
 
 
-
+#ifdef LOGGING
 static uint8_t received_SID[SID_LENGTH] = {0};
 struct event_indicator_struct_BUF_status event_BUF_status_message;
 struct event_indicator_struct_BLE event_BLE_message;
+uint8_t BUF_status_message_UART_buffer[BASE64_SIZE(sizeof(event_BUF_status_message))];
+uint8_t BLE_message_UART_buffer[BASE64_SIZE(sizeof(event_BLE_message))];
+
 static void update_UART_Messages (uint8_t message_type);
+#endif
+
 /* I2C variables *****************************************************/
 static uint16_t i2c_read_delay;
 /*********************************************************************/
@@ -177,6 +187,37 @@ static uint32_t previous_receive_counter = 0;
 
 extern Clock_Handle ADC_ChannelSwitchClockHandle;
 
+#ifdef LOGGING
+char *base64_encode(char *out, int out_size, const uint8_t *in, int in_size)
+{
+    static const char b64[] =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    char *ret, *dst;
+    unsigned i_bits = 0;
+    int i_shift = 0;
+    int bytes_remaining = in_size;
+
+    if (in_size >= UINT_MAX / 4 ||
+        out_size < BASE64_SIZE(in_size))
+        return NULL;
+    ret = dst = out;
+    while (bytes_remaining) {
+        i_bits = (i_bits << 8) + *in++;
+        bytes_remaining--;
+        i_shift += 8;
+
+        do {
+            *dst++ = b64[(i_bits << 6 >> i_shift) & 0x3f];
+            i_shift -= 6;
+        } while (i_shift > 6 || (bytes_remaining == 0 && i_shift > 0));
+    }
+    while ((dst - ret) & 3)
+        *dst++ = '=';
+    *dst = '\0';
+
+    return ret;
+}
+#endif
 
 #ifdef LPF
 void rt_OneStep(void);
@@ -257,10 +298,11 @@ void stop_voice_handle(void)
     /* save current volume level */
     //ProjectZero_enqueueMsg(PZ_APP_MSG_Write_vol, NULL);
     osal_snv_write(INIT_VOL_ADDR, 1, &current_volume);
+#ifdef LOGGING
     memset(received_SID, 0, SID_LENGTH);
     memset(&event_BLE_message, 0, sizeof(event_BLE_message)) ;
     memset(&event_BUF_status_message, 0, sizeof(event_BUF_status_message)) ;
-
+#endif
 }
 
 
@@ -369,7 +411,7 @@ void HandsFree_init (void)
     /* Initialize the key structure */
     read_aes_key(global_key);
     CryptoKeyPlaintext_initKey(&cryptoKey, (uint8_t*) global_key, sizeof(global_key));
-
+#ifdef LOGGING
     for(uint16_t i = 0 ; i < sizeof(event_BUF_status_message.MAC_addr) ; i++)
     {
         event_BUF_status_message.MAC_addr[i] = macAddress[i];
@@ -378,7 +420,7 @@ void HandsFree_init (void)
     event_BUF_status_message.null_terminator = 0x00;
     event_BLE_message.null_terminator = 0x00;
     event_BUF_status_message.message_type = RECEIVE_BUFFER_STATUS;
-
+#endif
     /* BLE optimization */
 //    HCI_EXT_OverlappedProcessingCmd(HCI_EXT_ENABLE_OVERLAPPED_PROCESSING);
 //    HCI_EXT_HaltDuringRfCmd( HCI_EXT_HALT_DURING_RF_DISABLE ); //Enable CPU during RF events (scan included) - may increase power consumption
@@ -396,7 +438,7 @@ void blink_timer_callback(GPTimerCC26XX_Handle handle, GPTimerCC26XX_IntMask int
     {
         ProjectZero_enqueueMsg(PZ_APP_MSG_Read_ADC_Power_Button_Voltage, NULL);
     }
-    //battery_voltage = get_bat_voltage();
+    battery_voltage = get_bat_voltage();
     if(blink)
     {
         blink = false;
@@ -573,17 +615,21 @@ void USER_task_Handler (pzMsg_t *pMsg)
             if((send_status != SUCCESS)/* || (send_status == 0x15)*/)
             {
                 error_counter_packet_send++;
+#ifdef LOGGING
                 update_UART_Messages(PACKET_SENT_ERROR_TYPE);
 
                 ProjectZero_enqueueMsg(PZ_APP_MSG_Send_message_BLE, NULL);
                 ProjectZero_enqueueMsg(PZ_APP_MSG_Send_message_Buf_Status, NULL);
+#endif
             }
             else
             {
+#ifdef LOGGING
                 update_UART_Messages(PACKET_SENT_MESSAGE_TYPE);
 
                 ProjectZero_enqueueMsg(PZ_APP_MSG_Send_message_BLE, NULL);
                 ProjectZero_enqueueMsg(PZ_APP_MSG_Send_message_Buf_Status, NULL);
+#endif
             }
 
 
@@ -680,19 +726,21 @@ void USER_task_Handler (pzMsg_t *pMsg)
             osal_snv_write(INIT_VOL_ADDR, 1, &current_volume);
         }
         break;
-
+#ifdef LOGGING
         case PZ_APP_MSG_Send_message_BLE:
         {
-            UART_write(uart, &event_BLE_message, sizeof(event_BLE_message));
+            base64_encode((char *)BLE_message_UART_buffer, (int32_t)BASE64_SIZE(sizeof(BLE_message_UART_buffer)), (const uint8_t *)&event_BLE_message, sizeof(event_BLE_message));
+            UART_write(uart, BLE_message_UART_buffer, sizeof(BLE_message_UART_buffer));
         }
         break;
 
         case PZ_APP_MSG_Send_message_Buf_Status:
         {
-            UART_write(uart, &event_BUF_status_message, sizeof(event_BUF_status_message));
+            base64_encode((char *)BUF_status_message_UART_buffer, (int32_t)BASE64_SIZE(sizeof(BUF_status_message_UART_buffer)), (const uint8_t *)&event_BUF_status_message, sizeof(event_BUF_status_message));
+            UART_write(uart, BUF_status_message_UART_buffer, sizeof(BUF_status_message_UART_buffer));
         }
         break;
-
+#endif
         case PZ_APP_MSG_Read_key:
             get_fh_key();
         break;
@@ -767,6 +815,7 @@ void ProjectZero_DataService_ValueChangeHandler(
         // Do something useful with pCharData->data here
         // -------------------------
         // Copy received data to holder array, ensuring NULL termination.
+#ifdef LOGGING
         memset(received_SID, 0, SID_LENGTH);
         memcpy(received_SID, pCharData->data, SID_LENGTH);
         for(uint16_t i = 0 ; i < sizeof(event_BUF_status_message.SID); i++)
@@ -774,18 +823,18 @@ void ProjectZero_DataService_ValueChangeHandler(
             event_BUF_status_message.SID[i] = received_SID[i];
             event_BLE_message.SID[i] = received_SID[i];
         }
-
+#endif
         break;
 
     case DS_STREAM_INPUT_ID:
         Mailbox_post(mailbox, pCharData->data, BIOS_NO_WAIT);
         counter_packet_received++;
-
+#ifdef LOGGING
         update_UART_Messages(PACKET_RECEIVED_MESSAGE_TYPE);
 
         ProjectZero_enqueueMsg(PZ_APP_MSG_Send_message_BLE, NULL);
         ProjectZero_enqueueMsg(PZ_APP_MSG_Send_message_Buf_Status, NULL);
-
+#endif
         packet_lost = 100.0f * ((float)counter_packet_send - (float)counter_packet_received) / (float)counter_packet_send;
         // -------------------------
         // Do something useful with pCharData->data here
@@ -796,6 +845,7 @@ void ProjectZero_DataService_ValueChangeHandler(
     }
 }
 
+#ifdef LOGGING
 static void update_UART_Messages (uint8_t message_type)
 {
     uint32_t timestamp = GPTimerCC26XX_getValue(measure_tim_hdl);
@@ -806,7 +856,7 @@ static void update_UART_Messages (uint8_t message_type)
     event_BUF_status_message.buff_status = Mailbox_getNumPendingMsgs(mailbox);
     event_BUF_status_message.timestamp = timestamp;
 }
-
+#endif
 
 static void bufRdy_callback(I2SCC26XX_Handle handle, I2SCC26XX_StreamNotification *pStreamNotification)
 {

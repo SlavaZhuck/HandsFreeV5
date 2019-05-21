@@ -89,6 +89,7 @@ extern "C"
 /* Bluetooth Profiles */
 #include <devinfoservice.h>
 #include "./services/data_service.h"
+#include "GeneralDef.h"
 
 /* Application specific includes */
 #include <Board.h>
@@ -134,8 +135,10 @@ extern "C"
 #define PZ_APP_MSG_Read_ADC_Power_Button_Voltage   15  /* Connection Event End notice                 */
 #define PZ_APP_MSG_Load_vol      16  /* Connection Event End notice                 */
 #define PZ_APP_MSG_Write_vol     17  /* Connection Event End notice                 */
+#ifdef LOGGING
 #define PZ_APP_MSG_Send_message_BLE     18  /* Connection Event End notice                 */
 #define PZ_APP_MSG_Send_message_Buf_Status     19  /* Connection Event End notice                 */
+#endif
 #define PZ_APP_MSG_Read_ADC_Battery_Voltage_UART   20  /* Connection Event End notice                 */
 #define PZ_APP_MSG_Read_key     21  /* Connection Event End notice                 */
 #define PZ_APP_MSG_Write_key     22  /* Connection Event End notice                 */
