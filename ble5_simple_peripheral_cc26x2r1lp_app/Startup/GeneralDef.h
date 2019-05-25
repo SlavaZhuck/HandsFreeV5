@@ -10,5 +10,6 @@
 
 #define UART_DEBUG
 //#define LPF
+//#define LOGGING
 
 #endif /* STARTUP_GENERALDEF_H_ */
