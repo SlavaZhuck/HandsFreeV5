@@ -23,10 +23,9 @@
 #include "driverlib/aon_batmon.h"
 #include "buttons.h"
 #include "power_battery.h"
-#ifdef  LPF
-  #include "../LPF/LPF.h"                       /* Model's header file */
-  #include "../LPF/rtwtypes.h"
-#endif
+#include "Noise_TRSH.h"
+#include "../LPF/LPF.h"                       /* Model's header file */
+#include "../LPF/rtwtypes.h"
 
 
 #ifdef  LOGGING
@@ -46,6 +45,7 @@ AESCBC_Operation    operationOneStepEncrypt;
 AESCBC_Operation    operationOneStepDecrypt;
 AESCBC_Handle       AESCBCHandle;
 uint8_t temp_crypto[V_STREAM_OUTPUT_SOUND_LEN + 3];
+
 /* Debug time variables ***************************************************/
 GPTimerCC26XX_Value timestamp_encode_start;
 GPTimerCC26XX_Value timestamp_encode_stop;
@@ -53,16 +53,19 @@ GPTimerCC26XX_Value timestamp_encode_dif;
 GPTimerCC26XX_Value timestamp_decode_start;
 GPTimerCC26XX_Value timestamp_decode_stop;
 GPTimerCC26XX_Value timestamp_decode_dif;
-/*********************************************************************/
-#ifdef  LPF
-    GPTimerCC26XX_Value timestamp_LPF_start;
-    GPTimerCC26XX_Value timestamp_LPF_stop;
-    GPTimerCC26XX_Value timestamp_LPF_dif;
-    GPTimerCC26XX_Value timestamp_DECIM_start;
-    GPTimerCC26XX_Value timestamp_DECIM_stop;
-    GPTimerCC26XX_Value timestamp_DECIM_dif;
-#endif
 
+/***********LPF****************************************************/
+GPTimerCC26XX_Value timestamp_LPF_start;
+GPTimerCC26XX_Value timestamp_LPF_stop;
+GPTimerCC26XX_Value timestamp_LPF_dif;
+bool enable_LPF = false;
+
+/*****************NOISE GATE***********************************/
+GPTimerCC26XX_Value timestamp_NG_start;
+GPTimerCC26XX_Value timestamp_NG_stop;
+GPTimerCC26XX_Value timestamp_NG_dif;
+struct power_struct in_power;
+bool enable_NoiseGate = false;
 /******Crypto key Start ******/
 #define KEY_SNV_ID                          BLE_NVID_CUST_START
 #define KEY_SIZE                            16
@@ -72,12 +75,8 @@ GPTimerCC26XX_Value timestamp_decode_dif;
 extern ADCBuf_Conversion adc_conversion;
 extern ADCBuf_Handle adc_hdl;
 /******Uart Start ******/
-#ifdef UART_DEBUG
-  #define UART_BAUD_RATE 921600
-#endif
-#ifndef UART_DEBUG
-  #define UART_BAUD_RATE 115200
-#endif
+
+#define UART_BAUD_RATE 921600
 #define MAX_NUM_RX_BYTES    100   // Maximum RX bytes to receive in one go
 #define MAX_NUM_TX_BYTES    100   // Maximum TX bytes to send in one go
 #define WANTED_RX_BYTES     1     // Maximum TX bytes to send in one go
@@ -88,11 +87,11 @@ static UART_Params uartParams;
 uint8_t macAddress[MAC_SIZE];
 static uint32_t wantedRxBytes = WANTED_RX_BYTES;            // Number of bytes received so far
 static uint8_t rxBuf[MAX_NUM_RX_BYTES];   // Receive buffer
+bool enable_UART_DEBUG = false;
 
-#ifdef UART_DEBUG
 //int16_t uart_data_send[I2S_SAMP_PER_FRAME+1];
 int16_t uart_data_send[I2S_SAMP_PER_FRAME * 2 + 1 + 8]; // 2 buffers, start bytes, 2 ima_coder states
-#endif
+
 /******Uart End ******/
 static void readCallback(UART_Handle handle, void *rxBuf, size_t size);
 static void writeCallback(UART_Handle handle_uart, void *rxBuf, size_t size);
@@ -219,7 +218,6 @@ char *base64_encode(char *out, int out_size, const uint8_t *in, int in_size)
 }
 #endif
 
-#ifdef LPF
 void rt_OneStep(void);
 
 void rt_OneStep(void)
@@ -251,8 +249,6 @@ void rt_OneStep(void)
     /* Restore FPU context here (if necessary) */
     /* Enable interrupts here */
   }
-#endif
-
 
 void start_voice_handle(void)
 {
@@ -292,9 +288,7 @@ void stop_voice_handle(void)
     memset ( packet_data,   0, sizeof(packet_data) );
     memset ( raw_data_received, 0, sizeof(raw_data_received) );
     memset ( mic_data_1ch, 0, sizeof(mic_data_1ch));
-#ifdef LPF
     memset ( &rtDW, 0, sizeof(rtDW) );
-#endif
     /* save current volume level */
     //ProjectZero_enqueueMsg(PZ_APP_MSG_Write_vol, NULL);
     osal_snv_write(INIT_VOL_ADDR, 1, &current_volume);
@@ -310,9 +304,7 @@ void HandsFree_init (void)
 {
     buttons_init();
     power_battery_init();
-#ifdef LPF
     LPF_initialize();
-#endif
     max9860_I2C_Init();
     max9860_I2C_Read_Status();
     GPTimerCC26XX_Params_init(&tim_params);
@@ -536,7 +528,7 @@ void USER_task_Handler (pzMsg_t *pMsg)
                 Mailbox_pend(mailbox, packet_data, BIOS_NO_WAIT);
 
                 timestamp_decode_start =  GPTimerCC26XX_getValue(measure_tim_hdl);
-                //decrypt_packet(packet_data);
+                decrypt_packet(packet_data);
                 int16_t temp_current = packet_data[V_STREAM_OUTPUT_SOUND_LEN + 1] | packet_data[V_STREAM_OUTPUT_SOUND_LEN] << 8;
 
                 ima_Decode_state.current = (int32_t)temp_current;
@@ -547,17 +539,18 @@ void USER_task_Handler (pzMsg_t *pMsg)
                 timestamp_decode_dif = timestamp_decode_stop - timestamp_decode_start;
 
                 previous_receive_counter = counter_packet_received;
-            #ifdef  LPF
-                timestamp_LPF_start =  GPTimerCC26XX_getValue(measure_tim_hdl);
-                for(uint16_t i = 0 ; i< I2S_SAMP_PER_FRAME; i++)
+                if(enable_LPF)//500000
                 {
-                    rtU.In1 = raw_data_received[i];
-                    rt_OneStep();
-                    raw_data_received[i] = rtY.Out1;
+                    timestamp_LPF_start =  GPTimerCC26XX_getValue(measure_tim_hdl);
+                    for(uint16_t i = 0 ; i< I2S_SAMP_PER_FRAME; i++)
+                    {
+                        rtU.In1 = raw_data_received[i];
+                        rt_OneStep();
+                        raw_data_received[i] = rtY.Out1;
+                    }
+                    timestamp_LPF_stop =  GPTimerCC26XX_getValue(measure_tim_hdl);
+                    timestamp_LPF_dif = timestamp_LPF_stop - timestamp_LPF_start;
                 }
-                timestamp_LPF_stop =  GPTimerCC26XX_getValue(measure_tim_hdl);
-                timestamp_LPF_dif = timestamp_LPF_stop - timestamp_LPF_start;
-            #endif
             }else{
                 memset ( packet_data,   0, sizeof(packet_data) );
                 memset ( raw_data_received, 0, sizeof(raw_data_received));
@@ -585,7 +578,15 @@ void USER_task_Handler (pzMsg_t *pMsg)
             {
                 memcpy(bufferRequest.bufferOut, &raw_data_received[160], sizeof(raw_data_received) / 2 );
                 memcpy(&mic_data_1ch[160], bufferRequest.bufferIn, sizeof(mic_data_1ch) / 2);
+                if(enable_NoiseGate)
+                {
+                    timestamp_NG_start =  GPTimerCC26XX_getValue(measure_tim_hdl);
+                    in_power = power_calculation(mic_data_1ch, I2S_SAMP_PER_FRAME);//52000 ticks
+                    amplify (mic_data_1ch, I2S_SAMP_PER_FRAME, (int16_t)in_power.power_log);
 
+                    timestamp_NG_stop =  GPTimerCC26XX_getValue(measure_tim_hdl);
+                    timestamp_NG_dif = timestamp_NG_stop - timestamp_NG_start;
+                }
                 bufferRelease.bufferHandleOut = bufferRequest.bufferHandleOut;
                 bufferRelease.bufferHandleIn = bufferRequest.bufferHandleIn;
                 I2SCC26XX_releaseBuffer(i2sHandle, &bufferRelease);
@@ -610,7 +611,7 @@ void USER_task_Handler (pzMsg_t *pMsg)
             timestamp_encode_stop =  GPTimerCC26XX_getValue(measure_tim_hdl);
             timestamp_encode_dif = timestamp_encode_stop - timestamp_encode_start;
 
-            //encrypt_packet(send_array);
+            encrypt_packet(send_array);
             send_status = DataService_SetParameter(DS_STREAM_OUTPUT_ID, DS_STREAM_OUTPUT_LEN, send_array);
             if((send_status != SUCCESS)/* || (send_status == 0x15)*/)
             {
@@ -634,7 +635,8 @@ void USER_task_Handler (pzMsg_t *pMsg)
 
 
             counter_packet_send++;
-            #ifdef  UART_DEBUG
+            if(enable_UART_DEBUG)
+            {
                 memcpy(&uart_data_send[1],                            mic_data_1ch,      sizeof(mic_data_1ch));
                 memcpy(&uart_data_send[I2S_SAMP_PER_FRAME + 1],       raw_data_received,     sizeof(raw_data_received));
                 memcpy(&uart_data_send[I2S_SAMP_PER_FRAME*2 + 1],     &ima_Encode_state,     sizeof(ima_Encode_state));
@@ -642,9 +644,9 @@ void USER_task_Handler (pzMsg_t *pMsg)
                 //memcpy(&uart_data_send[I2S_SAMP_PER_FRAME * 2 + 1], raw_data_received, sizeof(raw_data_received));
                 uart_data_send[0]= (40u << 8u) + 41u;   //start bytes for MATLAB ")("
                 UART_write(uart, uart_data_send, sizeof(uart_data_send));
-            #endif
             }
-            break;
+        }
+        break;
 
         case PZ_I2C_Read_status_EVT:
         {
@@ -696,8 +698,8 @@ void USER_task_Handler (pzMsg_t *pMsg)
                 while(1);
             }
             /* return Power button monitor ADC channel after ADC_SWITCH_TIMEOUT*/
-            Util_startClock((Clock_Struct *)ADC_ChannelSwitchClockHandle);
             get_fh_param();
+            Util_startClock((Clock_Struct *)ADC_ChannelSwitchClockHandle);
         }
         break;
 

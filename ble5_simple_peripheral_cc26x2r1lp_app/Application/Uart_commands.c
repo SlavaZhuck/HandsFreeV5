@@ -83,7 +83,7 @@ void send_fh_key (void){
 
     clear_Tx_packet();
 
-    if(!write_aes_key(&Rx_Data.data)){
+    if(!write_aes_key((uint8_t *)&Rx_Data.data)){
         read_aes_key(global_key);//read key to make it work at time of write action
         send_answer_for_command(REC_OK);
     }else{

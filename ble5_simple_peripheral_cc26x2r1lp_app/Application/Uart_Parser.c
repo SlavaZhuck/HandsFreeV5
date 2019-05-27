@@ -40,6 +40,10 @@ unsigned char Address = (ADR_TX(ADR_LZO) | ADR_REC(ADR_PC))  ;       //addr
 unsigned char current_data_lenght = 0x0  ;       //addr
 unsigned short calculated_CRC = 0;
 unsigned char uart_val = 1;
+
+extern bool enable_NoiseGate;
+extern bool enable_LPF;
+extern bool enable_UART_DEBUG;
 //static unsigned char adc_val = 1;
 
 //void set_Myaddr(unsigned char addr){
@@ -88,6 +92,7 @@ unsigned short Crc16(unsigned char*pcBlock, unsigned short len)
 
 //extern GPTimerCC26XX_Value system_tick;
 //extern GPTimerCC26XX_Handle system_time;
+
 
 void OnRxByte( unsigned char Chr){
 
@@ -230,6 +235,42 @@ uint16_t PackProcessing(void){
             get_fh_cr_tp();
 
         break;}
+        case ENABLE_NG:
+        {
+            enable_NoiseGate = TRUE;
+            send_answer_for_command(STATUS_OK);
+            break;
+        }
+        case DISABLE_NG:
+        {
+            enable_NoiseGate = FALSE;
+            send_answer_for_command(STATUS_OK);
+            break;
+        }
+        case ENABLE_LPF:
+        {
+            enable_LPF = TRUE;
+            send_answer_for_command(STATUS_OK);
+            break;
+        }
+        case DISABLE_LPF:
+        {
+            enable_LPF = FALSE;
+            send_answer_for_command(STATUS_OK);
+            break;
+        }
+        case ENABLE_UART_DEBUG:
+        {
+            enable_UART_DEBUG = TRUE;
+            send_answer_for_command(STATUS_OK);
+            break;
+        }
+        case DISABLE_UART_DEBUG:
+        {
+            enable_UART_DEBUG = FALSE;
+            send_answer_for_command(STATUS_OK);
+            break;
+        }
 
         default:{
 

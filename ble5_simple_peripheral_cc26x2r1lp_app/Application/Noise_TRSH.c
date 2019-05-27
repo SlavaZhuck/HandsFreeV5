@@ -19,7 +19,7 @@ struct power_struct power_calculation (int16_t *in, uint16_t samp_number){
     struct power_struct out;
     float channel_power_1 = 0;
 
-    for(uint8_t i = 0 ; i < samp_number ; i++)
+    for(uint16_t i = 0 ; i < samp_number ; i++)
     {
         channel_power_1 += sqrtf((int32_t)in[i] * (int32_t)in[i]);
     }
@@ -41,7 +41,7 @@ void amplify (int16_t *in, uint16_t samp_number, int16_t power)
     }
     amplify_gain = 1/(pow(100, power_average / 20));
 
-    for(uint8_t i = 0 ; i < samp_number ; i++)
+    for(uint16_t i = 0 ; i < samp_number ; i++)
     {
         in[i] = (int16_t) ((float)in[i] * amplify_gain);
     }
