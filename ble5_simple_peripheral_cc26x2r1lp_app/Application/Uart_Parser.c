@@ -44,6 +44,7 @@ unsigned char uart_val = 1;
 extern bool enable_NoiseGate;
 extern bool enable_LPF;
 extern bool enable_UART_DEBUG;
+extern bool enable_EC;
 //static unsigned char adc_val = 1;
 
 //void set_Myaddr(unsigned char addr){
@@ -268,6 +269,18 @@ uint16_t PackProcessing(void){
         case DISABLE_UART_DEBUG:
         {
             enable_UART_DEBUG = FALSE;
+            send_answer_for_command(STATUS_OK);
+            break;
+        }
+        case ENABLE_EC:
+        {
+            enable_EC = TRUE;
+            send_answer_for_command(STATUS_OK);
+            break;
+        }
+        case DISABLE_EC:
+        {
+            enable_EC = FALSE;
             send_answer_for_command(STATUS_OK);
             break;
         }

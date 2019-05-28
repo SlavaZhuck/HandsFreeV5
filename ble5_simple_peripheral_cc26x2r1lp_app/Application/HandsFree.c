@@ -26,7 +26,7 @@
 #include "Noise_TRSH.h"
 #include "../LPF/LPF.h"                       /* Model's header file */
 #include "../LPF/rtwtypes.h"
-
+#include "../Echo_cancel/Echo_cancel.h"
 
 #ifdef  LOGGING
 #define BASE64_SIZE(x)  (((x)+2) / 3 * 4 + 1)
@@ -66,6 +66,11 @@ GPTimerCC26XX_Value timestamp_NG_stop;
 GPTimerCC26XX_Value timestamp_NG_dif;
 struct power_struct in_power;
 bool enable_NoiseGate = false;
+/***********Echo compensation****************************************************/
+GPTimerCC26XX_Value timestamp_EC_start;
+GPTimerCC26XX_Value timestamp_EC_stop;
+GPTimerCC26XX_Value timestamp_EC_dif;
+bool enable_EC = false;
 /******Crypto key Start ******/
 #define KEY_SNV_ID                          BLE_NVID_CUST_START
 #define KEY_SIZE                            16
@@ -305,6 +310,7 @@ void HandsFree_init (void)
     buttons_init();
     power_battery_init();
     LPF_initialize();
+    Echo_cancel_initialize();
     max9860_I2C_Init();
     max9860_I2C_Read_Status();
     GPTimerCC26XX_Params_init(&tim_params);
@@ -578,6 +584,26 @@ void USER_task_Handler (pzMsg_t *pMsg)
             {
                 memcpy(bufferRequest.bufferOut, &raw_data_received[160], sizeof(raw_data_received) / 2 );
                 memcpy(&mic_data_1ch[160], bufferRequest.bufferIn, sizeof(mic_data_1ch) / 2);
+                timestamp_EC_start =  GPTimerCC26XX_getValue(measure_tim_hdl);
+                if(enable_EC)
+                {
+                    for(uint16_t i = 0 ; i< I2S_SAMP_PER_FRAME; i++)
+                    {
+                        rtUeC.EnableeC = TRUE;
+                        rtUeC.ReseteC = FALSE;
+                        rtUeC.BLE_receiveeC = raw_data_received[i];
+                        rtUeC.MIC_dataeC = mic_data_1ch[i];
+                        Echo_cancel_step();
+                        mic_data_1ch[i] = rtYeC.OutputeC;
+                    }
+                    timestamp_EC_stop =  GPTimerCC26XX_getValue(measure_tim_hdl);
+                    timestamp_EC_dif = timestamp_EC_stop - timestamp_EC_start;
+                }
+                else
+                {
+                    rtUeC.ReseteC = TRUE;
+                    Echo_cancel_step();
+                }
                 if(enable_NoiseGate)
                 {
                     timestamp_NG_start =  GPTimerCC26XX_getValue(measure_tim_hdl);

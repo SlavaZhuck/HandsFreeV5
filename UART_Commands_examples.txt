@@ -8,3 +8,5 @@ AA 13 03 28 01 02 03 E7 1A - enable LPF
 AA 13 03 29 01 02 03 91 AE - disable LPF
 AA 13 03 30 01 02 03 79 7E - enable UART debug
 AA 13 03 31 01 02 03 33 F4 - disable UART debu
+AA 13 03 32 01 02 03 94 16 - enable EC
+AA 13 03 33 01 02 03 E2 A2 - disable EC
