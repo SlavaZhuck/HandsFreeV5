@@ -16,7 +16,7 @@
 #define POWER_ON 1
 #define POWER_OFF 0
 #define ADC_POWER_BUTTON_THRESHOLD 100 // ~15 pressed button, ~305 not pressed
-#define BAT_LOW_VOLTAGE     3000
+#define BAT_LOW_VOLTAGE     1780 //3000
     /******ADC End ******/
 
 

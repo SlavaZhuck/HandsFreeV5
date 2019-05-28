@@ -219,7 +219,7 @@ uint16_t PackProcessing(void){
 
         break;}
 
-        case GET_FH_PARAM :{//get mac address
+        case GET_FH_PARAM :{//get battery voltage
             ProjectZero_enqueueMsg(PZ_APP_MSG_Read_ADC_Battery_Voltage_UART, NULL);
 
         break;}

@@ -697,8 +697,8 @@ void USER_task_Handler (pzMsg_t *pMsg)
             {
                 while(1);
             }
-            /* return Power button monitor ADC channel after ADC_SWITCH_TIMEOUT*/
             get_fh_param();
+            /* return Power button monitor ADC channel after ADC_SWITCH_TIMEOUT*/
             Util_startClock((Clock_Struct *)ADC_ChannelSwitchClockHandle);
         }
         break;
