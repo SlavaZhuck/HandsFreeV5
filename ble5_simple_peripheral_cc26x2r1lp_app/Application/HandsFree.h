@@ -25,19 +25,20 @@
 
 #define TMR_PERIOD                          ((48000000UL))
 #define LOW_STATE_TIME                      ((TMR_PERIOD / 10) * 9)
-#define HIGH_STATE_TIME                     (TMR_PERIOD - LOW_STATE_TIME)
+#define HIGH_STATE_TIME                     ((TMR_PERIOD) - (LOW_STATE_TIME))
 
 #define SAMP_PERIOD                       (20.0f)  //ms
 
 
-#define SAMP_TIME                         (TMR_PERIOD * (SAMP_PERIOD / 1000.0f) - 1)
+#define SAMP_TIME                         ((TMR_PERIOD) * (SAMP_PERIOD / 1000.0f) - 1)
 //#define SAMP_TIME                          (4799999/4)
 #define PACKET_CODEC_META_DATA                   (3u)
 #define PACKET_PACKET_NUMBER_LENGHT              (4u)
 #define V_STREAM_OUTPUT_SOUND_LEN                (TRANSMIT_DATA_LENGTH - PACKET_CODEC_META_DATA - PACKET_PACKET_NUMBER_LENGHT )// - 7
 
 
-#define MAILBOX_DEPTH       10
+#define MAILBOX_DEPTH       20
+#define RESEND_DELAY        (SAMP_PERIOD/2.0f)
 /******I2S Start ******/
 //#define I2S_MEM_BASE                        (GPRAM_BASE + FlashSectorSizeGet())
 

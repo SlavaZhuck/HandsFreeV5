@@ -132,9 +132,12 @@ extern bool enable_blink;
 extern PIN_Handle ledPinHandle;
 
 uint32_t counter_packet_send = 0;
+uint32_t save_counter_packet_send = 0;
 uint32_t counter_packet_received = 0;
 float packet_lost = 0;
 uint32_t error_counter_packet_send = 0;
+uint32_t skip_counter_packet_send = 0;
+uint32_t resend_error_counter_packet_send = 0;
 uint8_t send_status = 0;
 
 uint8_t send_array[DS_STREAM_OUTPUT_LEN];
@@ -166,7 +169,7 @@ static I2SCC26XX_Params i2sParams =
 uint8_t packet_data[TRANSMIT_DATA_LENGTH];
 int16_t raw_data_received[I2S_SAMP_PER_FRAME];
 int16_t mic_data_1ch[I2S_SAMP_PER_FRAME];
-int16_t filtered_data[I2S_SAMP_PER_FRAME];
+int16_t raw_mic_data[I2S_SAMP_PER_FRAME];
 
 bool gotBufferIn = false;
 bool gotBufferInOut = false;
@@ -192,6 +195,13 @@ static ima_state ima_Encode_state;
 static ima_state ima_Decode_state;
 static uint32_t previous_receive_counter = 0;
 /* codec end */
+
+/* resend clock */
+static Clock_Struct Resend_BLEpacket_ChannelSwitchClock;
+static Clock_Handle Resend_BLEpacket_ClockHandle;
+
+static void Resend_BLEpacket_SwiFxn(UArg temp);
+
 
 extern Clock_Handle ADC_ChannelSwitchClockHandle;
 
@@ -423,6 +433,13 @@ void HandsFree_init (void)
     event_BLE_message.null_terminator = 0x00;
     event_BUF_status_message.message_type = RECEIVE_BUFFER_STATUS;
 #endif
+
+    Resend_BLEpacket_ClockHandle = Util_constructClock(&Resend_BLEpacket_ChannelSwitchClock,
+                                                       Resend_BLEpacket_SwiFxn, RESEND_DELAY,
+                                                       0,
+                                                       0,
+                                                       0);
+
     /* BLE optimization */
     HCI_EXT_OverlappedProcessingCmd(HCI_EXT_ENABLE_OVERLAPPED_PROCESSING);
     HCI_EXT_HaltDuringRfCmd( HCI_EXT_HALT_DURING_RF_DISABLE ); //Enable CPU during RF events (scan included) - may increase power consumption
@@ -549,18 +566,7 @@ void USER_task_Handler (pzMsg_t *pMsg)
                 timestamp_decode_dif = timestamp_decode_stop - timestamp_decode_start;
 
                 previous_receive_counter = counter_packet_received;
-                if(enable_LPF)//500000
-                {
-                    timestamp_LPF_start =  GPTimerCC26XX_getValue(measure_tim_hdl);
-                    for(uint16_t i = 0 ; i< I2S_SAMP_PER_FRAME; i++)
-                    {
-                        rtU.In1 = (float)raw_data_received[i];
-                        rt_OneStep();
-                        raw_data_received[i] = (int16)rtY.Out1;
-                    }
-                    timestamp_LPF_stop =  GPTimerCC26XX_getValue(measure_tim_hdl);
-                    timestamp_LPF_dif = timestamp_LPF_stop - timestamp_LPF_start;
-                }
+
             }else{
                 memset ( packet_data,   0, sizeof(packet_data) );
                 memset ( raw_data_received, 0, sizeof(raw_data_received));
@@ -588,8 +594,24 @@ void USER_task_Handler (pzMsg_t *pMsg)
             {
                 memcpy(bufferRequest.bufferOut, &raw_data_received[160], sizeof(raw_data_received) / 2 );
                 memcpy(&mic_data_1ch[160], bufferRequest.bufferIn, sizeof(mic_data_1ch) / 2);
+
+                if(enable_LPF)//450k-600k
+                {
+                    timestamp_LPF_start =  GPTimerCC26XX_getValue(measure_tim_hdl);
+                    for(uint16_t i = 0 ; i< I2S_SAMP_PER_FRAME; i++)
+                    {
+                        raw_mic_data[i] = mic_data_1ch[i];
+                        rtU.In1 = (float)mic_data_1ch[i];
+                        rt_OneStep();
+                        mic_data_1ch[i] = (int16)rtY.Out1;
+
+                    }
+                    timestamp_LPF_stop =  GPTimerCC26XX_getValue(measure_tim_hdl);
+                    timestamp_LPF_dif = timestamp_LPF_stop - timestamp_LPF_start;
+                }
+
                 timestamp_EC_start =  GPTimerCC26XX_getValue(measure_tim_hdl);
-                if(enable_EC)
+                if(enable_EC) // 500k- 630k
                 {
                     for(uint16_t i = 0 ; i< I2S_SAMP_PER_FRAME; i++)
                     {
@@ -648,15 +670,12 @@ void USER_task_Handler (pzMsg_t *pMsg)
 
             encrypt_packet(send_array);
             send_status = DataService_SetParameter(DS_STREAM_OUTPUT_ID, DS_STREAM_OUTPUT_LEN, send_array);
-            if((send_status != SUCCESS)/* || (send_status == 0x15)*/)
+            if((send_status != SUCCESS)/* || (send_status == 0x15)*/) /* 0x15 bleNoResources*/
             {
-                error_counter_packet_send++;
-#ifdef LOGGING
-                update_UART_Messages(PACKET_SENT_ERROR_TYPE);
-
-                ProjectZero_enqueueMsg(PZ_APP_MSG_Send_message_BLE, NULL);
-                ProjectZero_enqueueMsg(PZ_APP_MSG_Send_message_Buf_Status, NULL);
-#endif
+                Util_startClock((Clock_Struct *)Resend_BLEpacket_ClockHandle);
+                resend_error_counter_packet_send++;
+                /* safe current packet number to check before repeat */
+                save_counter_packet_send = counter_packet_send;
             }
             else
             {
@@ -673,7 +692,7 @@ void USER_task_Handler (pzMsg_t *pMsg)
             if(enable_UART_DEBUG)
             {
                 memcpy(&uart_data_send[1],                            mic_data_1ch,      sizeof(mic_data_1ch));
-                memcpy(&uart_data_send[I2S_SAMP_PER_FRAME + 1],       EC_data_debug,     sizeof(EC_data_debug));
+                memcpy(&uart_data_send[I2S_SAMP_PER_FRAME + 1],       raw_mic_data,     sizeof(raw_mic_data));
                  //memcpy(&uart_data_send[I2S_SAMP_PER_FRAME * 2 + 1], raw_data_received, sizeof(raw_data_received));
                 uart_data_send[0]= (40u << 8u) + 41u;   //start bytes for MATLAB ")("
                 UART_write(uart, uart_data_send, sizeof(uart_data_send));
@@ -689,6 +708,8 @@ void USER_task_Handler (pzMsg_t *pMsg)
 
         case PZ_SEND_START_STREAM_EVT:
         {
+            skip_counter_packet_send = 0;
+            resend_error_counter_packet_send = 0;
             error_counter_packet_send = 0;
             counter_packet_send = 0;
             counter_packet_received = 0;
@@ -783,12 +804,52 @@ void USER_task_Handler (pzMsg_t *pMsg)
         case PZ_APP_MSG_Write_key:
             send_fh_key();
         break;
+
+        case PZ_APP_MSG_Resend_Packet:
+            if(counter_packet_send == (save_counter_packet_send + 1))
+            {
+                send_status = DataService_SetParameter(DS_STREAM_OUTPUT_ID, DS_STREAM_OUTPUT_LEN, send_array);
+                if((send_status != SUCCESS)/* || (send_status == 0x15)*/) /* 0x15 bleNoResources*/
+                {
+                    error_counter_packet_send++;
+                    save_counter_packet_send = 0;
+#ifdef LOGGING
+                    update_UART_Messages(PACKET_SENT_ERROR_TYPE);
+                    ProjectZero_enqueueMsg(PZ_APP_MSG_Send_message_BLE, NULL);
+                    ProjectZero_enqueueMsg(PZ_APP_MSG_Send_message_Buf_Status, NULL);
+#endif
+                }
+                else
+                {
+#ifdef LOGGING
+                update_UART_Messages(PACKET_SENT_MESSAGE_TYPE);
+                ProjectZero_enqueueMsg(PZ_APP_MSG_Send_message_BLE, NULL);
+                ProjectZero_enqueueMsg(PZ_APP_MSG_Send_message_Buf_Status, NULL);
+#endif
+                }
+            }
+            else
+            {
+                skip_counter_packet_send++;
+#ifdef LOGGING
+                update_UART_Messages(PACKET_SENT_ERROR_TYPE);
+                ProjectZero_enqueueMsg(PZ_APP_MSG_Send_message_BLE, NULL);
+                ProjectZero_enqueueMsg(PZ_APP_MSG_Send_message_Buf_Status, NULL);
+#endif
+
+            }
+        break;
+
+
         default:
         break;
     }
 }
 
-
+static void Resend_BLEpacket_SwiFxn(UArg temp)
+{
+    ProjectZero_enqueueMsg(PZ_APP_MSG_Resend_Packet, NULL);
+}
 /*
  * @brief   Handle a CCCD (configuration change) write received from a peer
  *          device. This tells us whether the peer device wants us to send

@@ -3,9 +3,9 @@
  *
  * Code generated for Simulink model 'Echo_cancel'.
  *
- * Model version                  : 1.25
+ * Model version                  : 1.30
  * Simulink Coder version         : 9.1 (R2019a) 23-Nov-2018
- * C/C++ source code generated on : Thu May 30 21:44:43 2019
+ * C/C++ source code generated on : Sun Jun  2 15:49:13 2019
  *
  * Target selection: ert.tlc
  * Embedded hardware selection: ARM Compatible->ARM Cortex

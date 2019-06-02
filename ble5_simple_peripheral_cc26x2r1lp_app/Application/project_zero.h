@@ -142,6 +142,7 @@ extern "C"
 #define PZ_APP_MSG_Read_ADC_Battery_Voltage_UART   20  /* Connection Event End notice                 */
 #define PZ_APP_MSG_Read_key     21  /* Connection Event End notice                 */
 #define PZ_APP_MSG_Write_key     22  /* Connection Event End notice                 */
+#define PZ_APP_MSG_Resend_Packet     23  /* Connection Event End notice                 */
 
 
 // General discoverable mode: advertise indefinitely
