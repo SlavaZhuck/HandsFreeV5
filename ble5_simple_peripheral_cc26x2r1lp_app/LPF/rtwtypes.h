@@ -3,9 +3,9 @@
  *
  * Code generated for Simulink model 'LPF'.
  *
- * Model version                  : 1.79
+ * Model version                  : 1.90
  * Simulink Coder version         : 9.1 (R2019a) 23-Nov-2018
- * C/C++ source code generated on : Tue Apr 30 20:55:57 2019
+ * C/C++ source code generated on : Sun Jun  2 14:46:58 2019
  *
  * Target selection: ert.tlc
  * Embedded hardware selection: ARM Compatible->ARM Cortex
@@ -44,6 +44,7 @@
  * Fixed width word size data types:                                     *
  *   int8_T, int16_T, int32_T     - signed 8, 16, or 32 bit integers     *
  *   uint8_T, uint16_T, uint32_T  - unsigned 8, 16, or 32 bit integers   *
+ *   real32_T, real64_T           - 32 and 64 bit floating point numbers *
  *=======================================================================*/
 typedef signed char int8_T;
 typedef unsigned char uint8_T;
@@ -53,11 +54,15 @@ typedef int int32_T;
 typedef unsigned int uint32_T;
 typedef long long int64_T;
 typedef unsigned long long uint64_T;
+typedef float real32_T;
+typedef double real64_T;
 
 /*===========================================================================*
  * Generic type definitions: boolean_T, char_T, byte_T, int_T, uint_T,       *
- *                           ulong_T, ulonglong_T.                           *
+ *                           real_T, time_T, ulong_T, ulonglong_T.           *
  *===========================================================================*/
+typedef double real_T;
+typedef double time_T;
 typedef unsigned char boolean_T;
 typedef int int_T;
 typedef unsigned int uint_T;

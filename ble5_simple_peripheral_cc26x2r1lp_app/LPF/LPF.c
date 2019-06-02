@@ -3,9 +3,9 @@
  *
  * Code generated for Simulink model 'LPF'.
  *
- * Model version                  : 1.79
+ * Model version                  : 1.91
  * Simulink Coder version         : 9.1 (R2019a) 23-Nov-2018
- * C/C++ source code generated on : Tue Apr 30 20:55:57 2019
+ * C/C++ source code generated on : Sun Jun  2 14:53:58 2019
  *
  * Target selection: ert.tlc
  * Embedded hardware selection: ARM Compatible->ARM Cortex
@@ -82,13 +82,13 @@ void LPF_step(void)
   int32_T j;
   int64_T q1;
 
-  /* DiscreteFir: '<Root>/Filter1' incorporates:
+  /* DiscreteFir: '<Root>/Filter' incorporates:
    *  Inport: '<Root>/In1'
    */
   /* Consume delay line and beginning of input samples */
-  acc1 = rtU.In1 * rtConstP.Filter1_Coefficients[0];
-  for (j = 0; j < 9; j++) {
-    q1 = rtConstP.Filter1_Coefficients[1 + j] * rtDW.Filter1_states[j];
+  acc1 = rtU.In1 * rtConstP.Filter_Coefficients[0];
+  for (j = 0; j < 11; j++) {
+    q1 = rtConstP.Filter_Coefficients[1 + j] * rtDW.Filter_states[j];
     if ((acc1 < 0LL) && (q1 < MIN_int64_T - acc1)) {
       acc1 = MIN_int64_T;
     } else if ((acc1 > 0LL) && (q1 > MAX_int64_T - acc1)) {
@@ -98,27 +98,18 @@ void LPF_step(void)
     }
   }
 
-  acc1 = (((acc1 & 32768ULL) != 0ULL) && (((acc1 & 32767ULL) != 0ULL) || (acc1 >
-            0LL))) + (acc1 >> 16);
-  if (acc1 > 32767LL) {
-    acc1 = 32767LL;
-  } else {
-    if (acc1 < -32768LL) {
-      acc1 = -32768LL;
-    }
-  }
-
   /* Update delay line for next frame */
-  for (j = 7; j >= 0; j--) {
-    rtDW.Filter1_states[1 + j] = rtDW.Filter1_states[j];
+  for (j = 9; j >= 0; j--) {
+    rtDW.Filter_states[1 + j] = rtDW.Filter_states[j];
   }
 
-  rtDW.Filter1_states[0] = rtU.In1;
+  rtDW.Filter_states[0] = rtU.In1;
 
   /* Outport: '<Root>/Out1' incorporates:
-   *  DiscreteFir: '<Root>/Filter1'
+   *  DataTypeConversion: '<Root>/Data Type Conversion'
+   *  DiscreteFir: '<Root>/Filter'
    */
-  rtY.Out1 = (int16_T)acc1;
+  rtY.Out1 = (int16_T)(acc1 >> 15);
 }
 
 /* Model initialize function */

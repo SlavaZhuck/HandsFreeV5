@@ -3,9 +3,9 @@
  *
  * Code generated for Simulink model 'Echo_cancel'.
  *
- * Model version                  : 1.16
+ * Model version                  : 1.25
  * Simulink Coder version         : 9.1 (R2019a) 23-Nov-2018
- * C/C++ source code generated on : Tue May 28 21:32:19 2019
+ * C/C++ source code generated on : Thu May 30 21:44:43 2019
  *
  * Target selection: ert.tlc
  * Embedded hardware selection: ARM Compatible->ARM Cortex
@@ -36,22 +36,24 @@ typedef struct tag_RTMeC RT_MODELeC;
 
 /* Block signals and states (default storage) for system '<Root>' */
 typedef struct {
+  real32_T LMSFilter1_IN_BUFFER_DWORKeC[7];/* '<Root>/LMS Filter1' */
+  real32_T LMSFilter1_WGT_IC_DWORKeC[7];/* '<Root>/LMS Filter1' */
   uint32_T LMSFilter1_BUFF_IDX_DWORKeC;/* '<Root>/LMS Filter1' */
-  int16_T LMSFilter1_IN_BUFFER_DWORKeC[5];/* '<Root>/LMS Filter1' */
-  int16_T LMSFilter1_WGT_IC_DWORKeC[5];/* '<Root>/LMS Filter1' */
 } D_WorkeC;
 
 /* External inputs (root inport signals with default storage) */
 typedef struct {
-  int16_T BLE_receiveeC;               /* '<Root>/BLE_receive' */
-  int16_T MIC_dataeC;                  /* '<Root>/MIC_data' */
+  real32_T BLE_receiveeC;              /* '<Root>/BLE_receive' */
+  real32_T MIC_dataeC;                 /* '<Root>/MIC_data' */
   boolean_T EnableeC;                  /* '<Root>/Enable' */
   boolean_T ReseteC;                   /* '<Root>/Reset' */
 } ExternalInputseC;
 
 /* External outputs (root outports fed by signals with default storage) */
 typedef struct {
-  int16_T OutputeC;                    /* '<Root>/Output' */
+  real32_T OutputeC;                   /* '<Root>/Output' */
+  real32_T debug_erroreC;              /* '<Root>/debug_error' */
+  real32_T debug_coeffseC[7];          /* '<Root>/debug_coeffs' */
 } ExternalOutputseC;
 
 /* Real-time Model Data Structure */

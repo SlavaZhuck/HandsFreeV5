@@ -67,10 +67,14 @@ GPTimerCC26XX_Value timestamp_NG_dif;
 struct power_struct in_power;
 bool enable_NoiseGate = false;
 /***********Echo compensation****************************************************/
+#define EC_FILTER_SIZE          (5u)
 GPTimerCC26XX_Value timestamp_EC_start;
 GPTimerCC26XX_Value timestamp_EC_stop;
 GPTimerCC26XX_Value timestamp_EC_dif;
 bool enable_EC = false;
+float EC_data_debug[I2S_SAMP_PER_FRAME];
+float EC_filt_coeffs_debug[EC_FILTER_SIZE];
+
 /******Crypto key Start ******/
 #define KEY_SNV_ID                          BLE_NVID_CUST_START
 #define KEY_SIZE                            16
@@ -95,7 +99,7 @@ static uint8_t rxBuf[MAX_NUM_RX_BYTES];   // Receive buffer
 bool enable_UART_DEBUG = false;
 
 //int16_t uart_data_send[I2S_SAMP_PER_FRAME+1];
-int16_t uart_data_send[I2S_SAMP_PER_FRAME * 2 + 1 + 8]; // 2 buffers, start bytes, 2 ima_coder states
+int16_t uart_data_send[I2S_SAMP_PER_FRAME * 2 + 1]; // 2 buffers, start bytes
 
 /******Uart End ******/
 static void readCallback(UART_Handle handle, void *rxBuf, size_t size);
@@ -550,9 +554,9 @@ void USER_task_Handler (pzMsg_t *pMsg)
                     timestamp_LPF_start =  GPTimerCC26XX_getValue(measure_tim_hdl);
                     for(uint16_t i = 0 ; i< I2S_SAMP_PER_FRAME; i++)
                     {
-                        rtU.In1 = raw_data_received[i];
+                        rtU.In1 = (float)raw_data_received[i];
                         rt_OneStep();
-                        raw_data_received[i] = rtY.Out1;
+                        raw_data_received[i] = (int16)rtY.Out1;
                     }
                     timestamp_LPF_stop =  GPTimerCC26XX_getValue(measure_tim_hdl);
                     timestamp_LPF_dif = timestamp_LPF_stop - timestamp_LPF_start;
@@ -591,10 +595,15 @@ void USER_task_Handler (pzMsg_t *pMsg)
                     {
                         rtUeC.EnableeC = TRUE;
                         rtUeC.ReseteC = FALSE;
-                        rtUeC.BLE_receiveeC = raw_data_received[i];
-                        rtUeC.MIC_dataeC = mic_data_1ch[i];
+                        rtUeC.BLE_receiveeC = (float)raw_data_received[i];
+                        rtUeC.MIC_dataeC = (float)mic_data_1ch[i];
                         Echo_cancel_step();
-                        mic_data_1ch[i] = rtYeC.OutputeC;
+                        mic_data_1ch[i] = (int16_t)rtYeC.OutputeC;
+                        EC_data_debug[i] = rtYeC.debug_erroreC;
+                    }
+                    for(uint16_t i = 0 ; i < EC_FILTER_SIZE; i++)
+                    {
+                        EC_filt_coeffs_debug[i] = rtYeC.debug_coeffseC[i];
                     }
                     timestamp_EC_stop =  GPTimerCC26XX_getValue(measure_tim_hdl);
                     timestamp_EC_dif = timestamp_EC_stop - timestamp_EC_start;
@@ -664,10 +673,8 @@ void USER_task_Handler (pzMsg_t *pMsg)
             if(enable_UART_DEBUG)
             {
                 memcpy(&uart_data_send[1],                            mic_data_1ch,      sizeof(mic_data_1ch));
-                memcpy(&uart_data_send[I2S_SAMP_PER_FRAME + 1],       raw_data_received,     sizeof(raw_data_received));
-                memcpy(&uart_data_send[I2S_SAMP_PER_FRAME*2 + 1],     &ima_Encode_state,     sizeof(ima_Encode_state));
-                memcpy(&uart_data_send[I2S_SAMP_PER_FRAME*2 + 1 + 4], &ima_Decode_state,     sizeof(ima_Decode_state));
-                //memcpy(&uart_data_send[I2S_SAMP_PER_FRAME * 2 + 1], raw_data_received, sizeof(raw_data_received));
+                memcpy(&uart_data_send[I2S_SAMP_PER_FRAME + 1],       EC_data_debug,     sizeof(EC_data_debug));
+                 //memcpy(&uart_data_send[I2S_SAMP_PER_FRAME * 2 + 1], raw_data_received, sizeof(raw_data_received));
                 uart_data_send[0]= (40u << 8u) + 41u;   //start bytes for MATLAB ")("
                 UART_write(uart, uart_data_send, sizeof(uart_data_send));
             }
