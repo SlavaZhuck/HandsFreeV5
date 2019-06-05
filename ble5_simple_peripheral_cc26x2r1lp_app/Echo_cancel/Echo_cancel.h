@@ -3,9 +3,9 @@
  *
  * Code generated for Simulink model 'Echo_cancel'.
  *
- * Model version                  : 1.30
+ * Model version                  : 1.40
  * Simulink Coder version         : 9.1 (R2019a) 23-Nov-2018
- * C/C++ source code generated on : Sun Jun  2 15:49:13 2019
+ * C/C++ source code generated on : Sun Jun  2 18:48:27 2019
  *
  * Target selection: ert.tlc
  * Embedded hardware selection: ARM Compatible->ARM Cortex
@@ -36,8 +36,8 @@ typedef struct tag_RTMeC RT_MODELeC;
 
 /* Block signals and states (default storage) for system '<Root>' */
 typedef struct {
-  real32_T LMSFilter1_IN_BUFFER_DWORKeC[7];/* '<Root>/LMS Filter1' */
-  real32_T LMSFilter1_WGT_IC_DWORKeC[7];/* '<Root>/LMS Filter1' */
+  real32_T LMSFilter1_IN_BUFFER_DWORKeC[3];/* '<Root>/LMS Filter1' */
+  real32_T LMSFilter1_WGT_IC_DWORKeC[3];/* '<Root>/LMS Filter1' */
   uint32_T LMSFilter1_BUFF_IDX_DWORKeC;/* '<Root>/LMS Filter1' */
 } D_WorkeC;
 
@@ -53,7 +53,7 @@ typedef struct {
 typedef struct {
   real32_T OutputeC;                   /* '<Root>/Output' */
   real32_T debug_erroreC;              /* '<Root>/debug_error' */
-  real32_T debug_coeffseC[7];          /* '<Root>/debug_coeffs' */
+  real32_T debug_coeffseC[3];          /* '<Root>/debug_coeffs' */
 } ExternalOutputseC;
 
 /* Real-time Model Data Structure */

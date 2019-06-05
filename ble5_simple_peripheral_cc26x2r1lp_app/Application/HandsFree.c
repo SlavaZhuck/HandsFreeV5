@@ -99,7 +99,7 @@ static uint8_t rxBuf[MAX_NUM_RX_BYTES];   // Receive buffer
 bool enable_UART_DEBUG = false;
 
 //int16_t uart_data_send[I2S_SAMP_PER_FRAME+1];
-int16_t uart_data_send[I2S_SAMP_PER_FRAME * 2 + 1]; // 2 buffers, start bytes
+int16_t uart_data_send[I2S_SAMP_PER_FRAME * 2 + 1 + 2 + 2]; // 2 buffers, start bytes, 4 bytes counter send, 4 bytes adc counter
 
 /******Uart End ******/
 static void readCallback(UART_Handle handle, void *rxBuf, size_t size);
@@ -132,6 +132,7 @@ extern bool enable_blink;
 extern PIN_Handle ledPinHandle;
 
 uint32_t counter_packet_send = 0;
+uint32_t counter_adc_data_read = 0;
 uint32_t save_counter_packet_send = 0;
 uint32_t counter_packet_received = 0;
 float packet_lost = 0;
@@ -271,6 +272,14 @@ void rt_OneStep(void)
 
 void start_voice_handle(void)
 {
+    /* init debug variables and counters*/
+    skip_counter_packet_send = 0;
+    resend_error_counter_packet_send = 0;
+    error_counter_packet_send = 0;
+    counter_packet_send = 0;
+    counter_adc_data_read = 0;
+    counter_packet_received = 0;
+
     max9860_I2C_Shutdown_state(0);//disable shutdown_mode
     //ProjectZero_enqueueMsg(PZ_APP_MSG_Load_vol, NULL);// read global vol level
     osal_snv_read(INIT_VOL_ADDR, 1, &current_volume);
@@ -555,7 +564,7 @@ void USER_task_Handler (pzMsg_t *pMsg)
                 Mailbox_pend(mailbox, packet_data, BIOS_NO_WAIT);
 
                 timestamp_decode_start =  GPTimerCC26XX_getValue(measure_tim_hdl);
-                decrypt_packet(packet_data);
+//                decrypt_packet(packet_data);
                 int16_t temp_current = packet_data[V_STREAM_OUTPUT_SOUND_LEN + 1] | packet_data[V_STREAM_OUTPUT_SOUND_LEN] << 8;
 
                 ima_Decode_state.current = (int32_t)temp_current;
@@ -586,116 +595,126 @@ void USER_task_Handler (pzMsg_t *pMsg)
                 I2SCC26XX_releaseBuffer(i2sHandle, &bufferRelease);
                 gotBufferInOut = 0;
                 i2c_read_delay++;
-            }
 
-            bufferRequest.buffersRequested = I2SCC26XX_BUFFER_IN_AND_OUT;
-            gotBufferInOut = I2SCC26XX_requestBuffer(i2sHandle, &bufferRequest);
-            if (gotBufferInOut)
-            {
-                memcpy(bufferRequest.bufferOut, &raw_data_received[160], sizeof(raw_data_received) / 2 );
-                memcpy(&mic_data_1ch[160], bufferRequest.bufferIn, sizeof(mic_data_1ch) / 2);
 
-                if(enable_LPF)//450k-600k
+                bufferRequest.buffersRequested = I2SCC26XX_BUFFER_IN_AND_OUT;
+                gotBufferInOut = I2SCC26XX_requestBuffer(i2sHandle, &bufferRequest);
+                if (gotBufferInOut)
                 {
-                    timestamp_LPF_start =  GPTimerCC26XX_getValue(measure_tim_hdl);
-                    for(uint16_t i = 0 ; i< I2S_SAMP_PER_FRAME; i++)
+                    memcpy(bufferRequest.bufferOut, &raw_data_received[160], sizeof(raw_data_received) / 2 );
+                    memcpy(&mic_data_1ch[160], bufferRequest.bufferIn, sizeof(mic_data_1ch) / 2);
+                    counter_adc_data_read++;
+                    if(enable_LPF)//350k-370k
                     {
-                        raw_mic_data[i] = mic_data_1ch[i];
-                        rtU.In1 = (float)mic_data_1ch[i];
-                        rt_OneStep();
-                        mic_data_1ch[i] = (int16)rtY.Out1;
+                        timestamp_LPF_start =  GPTimerCC26XX_getValue(measure_tim_hdl);
+                        for(uint16_t i = 0 ; i< I2S_SAMP_PER_FRAME; i++)
+                        {
+                            raw_mic_data[i] = mic_data_1ch[i];
+                            rtU.In1 = (float)mic_data_1ch[i];
+                            rt_OneStep();
+                            mic_data_1ch[i] = (int16)rtY.Out1;
 
+                        }
+                        timestamp_LPF_stop =  GPTimerCC26XX_getValue(measure_tim_hdl);
+                        timestamp_LPF_dif = timestamp_LPF_stop - timestamp_LPF_start;
                     }
-                    timestamp_LPF_stop =  GPTimerCC26XX_getValue(measure_tim_hdl);
-                    timestamp_LPF_dif = timestamp_LPF_stop - timestamp_LPF_start;
-                }
 
-                timestamp_EC_start =  GPTimerCC26XX_getValue(measure_tim_hdl);
-                if(enable_EC) // 500k- 630k
-                {
-                    for(uint16_t i = 0 ; i< I2S_SAMP_PER_FRAME; i++)
+                    timestamp_EC_start =  GPTimerCC26XX_getValue(measure_tim_hdl);
+                    if(enable_EC) // 500k- 630k
                     {
-                        rtUeC.EnableeC = TRUE;
-                        rtUeC.ReseteC = FALSE;
-                        rtUeC.BLE_receiveeC = (float)raw_data_received[i];
-                        rtUeC.MIC_dataeC = (float)mic_data_1ch[i];
+                        for(uint16_t i = 0 ; i< I2S_SAMP_PER_FRAME; i++)
+                        {
+                            rtUeC.EnableeC = TRUE;
+                            rtUeC.ReseteC = FALSE;
+                            rtUeC.BLE_receiveeC = (float)raw_data_received[i];
+                            rtUeC.MIC_dataeC = (float)mic_data_1ch[i];
+                            Echo_cancel_step();
+                            mic_data_1ch[i] = (int16_t)rtYeC.OutputeC;
+                            EC_data_debug[i] = rtYeC.debug_erroreC;
+                        }
+                        for(uint16_t i = 0 ; i < EC_FILTER_SIZE; i++)
+                        {
+                            EC_filt_coeffs_debug[i] = rtYeC.debug_coeffseC[i];
+                        }
+                        timestamp_EC_stop =  GPTimerCC26XX_getValue(measure_tim_hdl);
+                        timestamp_EC_dif = timestamp_EC_stop - timestamp_EC_start;
+                    }
+                    else
+                    {
+                        rtUeC.ReseteC = TRUE;
                         Echo_cancel_step();
-                        mic_data_1ch[i] = (int16_t)rtYeC.OutputeC;
-                        EC_data_debug[i] = rtYeC.debug_erroreC;
                     }
-                    for(uint16_t i = 0 ; i < EC_FILTER_SIZE; i++)
+                    if(enable_NoiseGate)
                     {
-                        EC_filt_coeffs_debug[i] = rtYeC.debug_coeffseC[i];
+                        timestamp_NG_start =  GPTimerCC26XX_getValue(measure_tim_hdl);
+                        in_power = power_calculation(mic_data_1ch, I2S_SAMP_PER_FRAME);//52000 ticks
+                        amplify (mic_data_1ch, I2S_SAMP_PER_FRAME, (int16_t)in_power.power_log);
+
+                        timestamp_NG_stop =  GPTimerCC26XX_getValue(measure_tim_hdl);
+                        timestamp_NG_dif = timestamp_NG_stop - timestamp_NG_start;
                     }
-                    timestamp_EC_stop =  GPTimerCC26XX_getValue(measure_tim_hdl);
-                    timestamp_EC_dif = timestamp_EC_stop - timestamp_EC_start;
-                }
-                else
-                {
-                    rtUeC.ReseteC = TRUE;
-                    Echo_cancel_step();
-                }
-                if(enable_NoiseGate)
-                {
-                    timestamp_NG_start =  GPTimerCC26XX_getValue(measure_tim_hdl);
-                    in_power = power_calculation(mic_data_1ch, I2S_SAMP_PER_FRAME);//52000 ticks
-                    amplify (mic_data_1ch, I2S_SAMP_PER_FRAME, (int16_t)in_power.power_log);
-
-                    timestamp_NG_stop =  GPTimerCC26XX_getValue(measure_tim_hdl);
-                    timestamp_NG_dif = timestamp_NG_stop - timestamp_NG_start;
-                }
-                bufferRelease.bufferHandleOut = bufferRequest.bufferHandleOut;
-                bufferRelease.bufferHandleIn = bufferRequest.bufferHandleIn;
-                I2SCC26XX_releaseBuffer(i2sHandle, &bufferRelease);
-                gotBufferInOut = 0;
-                i2c_read_delay++;
-            }
-
-            timestamp_encode_start =  GPTimerCC26XX_getValue(measure_tim_hdl);
+                    bufferRelease.bufferHandleOut = bufferRequest.bufferHandleOut;
+                    bufferRelease.bufferHandleIn = bufferRequest.bufferHandleIn;
+                    I2SCC26XX_releaseBuffer(i2sHandle, &bufferRelease);
+                    gotBufferInOut = 0;
+                    i2c_read_delay++;
+                    timestamp_encode_start =  GPTimerCC26XX_getValue(measure_tim_hdl);
 
 
-            send_array[V_STREAM_OUTPUT_SOUND_LEN] =     (uint8_t)(ima_Encode_state.current >> 8);
-            send_array[V_STREAM_OUTPUT_SOUND_LEN + 1] = (uint8_t)(ima_Encode_state.current & 0xFF);
-            send_array[V_STREAM_OUTPUT_SOUND_LEN + 2] = (uint8_t)ima_Encode_state.stepindex;
-            ima_encode_mono(&ima_Encode_state, send_array, mic_data_1ch, sizeof(mic_data_1ch));
+                    send_array[V_STREAM_OUTPUT_SOUND_LEN] =     (uint8_t)(ima_Encode_state.current >> 8);
+                    send_array[V_STREAM_OUTPUT_SOUND_LEN + 1] = (uint8_t)(ima_Encode_state.current & 0xFF);
+                    send_array[V_STREAM_OUTPUT_SOUND_LEN + 2] = (uint8_t)ima_Encode_state.stepindex;
+                    ima_encode_mono(&ima_Encode_state, send_array, mic_data_1ch, sizeof(mic_data_1ch));
 
 
-            send_array[TRANSMIT_DATA_LENGTH - 4] = (uint8_t)(counter_packet_send >> 24);
-            send_array[TRANSMIT_DATA_LENGTH - 3] = (uint8_t)(counter_packet_send >> 16);
-            send_array[TRANSMIT_DATA_LENGTH - 2] = (uint8_t)(counter_packet_send >> 8);
-            send_array[TRANSMIT_DATA_LENGTH - 1] = (uint8_t)(counter_packet_send);
+                    send_array[TRANSMIT_DATA_LENGTH - 4] = (uint8_t)(counter_packet_send >> 24);
+                    send_array[TRANSMIT_DATA_LENGTH - 3] = (uint8_t)(counter_packet_send >> 16);
+                    send_array[TRANSMIT_DATA_LENGTH - 2] = (uint8_t)(counter_packet_send >> 8);
+                    send_array[TRANSMIT_DATA_LENGTH - 1] = (uint8_t)(counter_packet_send);
 
-            timestamp_encode_stop =  GPTimerCC26XX_getValue(measure_tim_hdl);
-            timestamp_encode_dif = timestamp_encode_stop - timestamp_encode_start;
+                    timestamp_encode_stop =  GPTimerCC26XX_getValue(measure_tim_hdl);
+                    timestamp_encode_dif = timestamp_encode_stop - timestamp_encode_start;
 
-            encrypt_packet(send_array);
-            send_status = DataService_SetParameter(DS_STREAM_OUTPUT_ID, DS_STREAM_OUTPUT_LEN, send_array);
-            if((send_status != SUCCESS)/* || (send_status == 0x15)*/) /* 0x15 bleNoResources*/
-            {
-                Util_startClock((Clock_Struct *)Resend_BLEpacket_ClockHandle);
-                resend_error_counter_packet_send++;
-                /* safe current packet number to check before repeat */
-                save_counter_packet_send = counter_packet_send;
-            }
-            else
-            {
+        //            encrypt_packet(send_array);
+                    send_status = DataService_SetParameter(DS_STREAM_OUTPUT_ID, DS_STREAM_OUTPUT_LEN, send_array);
+                    if((send_status != SUCCESS)/* || (send_status == 0x15)*/) /* 0x15 bleNoResources*/
+                    {
+                        Util_startClock((Clock_Struct *)Resend_BLEpacket_ClockHandle);
+                        resend_error_counter_packet_send++;
+                        /* safe current packet number to check before repeat */
+                        save_counter_packet_send = counter_packet_send;
+
+                    }
+                    else
+                    {
+                        counter_packet_send++;
 #ifdef LOGGING
-                update_UART_Messages(PACKET_SENT_MESSAGE_TYPE);
+                        update_UART_Messages(PACKET_SENT_MESSAGE_TYPE);
 
-                ProjectZero_enqueueMsg(PZ_APP_MSG_Send_message_BLE, NULL);
-                ProjectZero_enqueueMsg(PZ_APP_MSG_Send_message_Buf_Status, NULL);
+                        ProjectZero_enqueueMsg(PZ_APP_MSG_Send_message_BLE, NULL);
+                        ProjectZero_enqueueMsg(PZ_APP_MSG_Send_message_Buf_Status, NULL);
 #endif
-            }
+                    }
+
+                    if(enable_UART_DEBUG)
+                    {
+                        memcpy(&uart_data_send[1],                            mic_data_1ch,      sizeof(mic_data_1ch));
+                        memcpy(&uart_data_send[I2S_SAMP_PER_FRAME + 1],       raw_data_received,     sizeof(raw_data_received));
+                        memcpy(&uart_data_send[I2S_SAMP_PER_FRAME + 1],       raw_data_received,     sizeof(raw_data_received));
+                         //memcpy(&uart_data_send[I2S_SAMP_PER_FRAME * 2 + 1], raw_data_received, sizeof(raw_data_received));
+                        uart_data_send[0]= (40u << 8u) + 41u;   //start bytes for MATLAB ")("
+                        uart_data_send[I2S_SAMP_PER_FRAME*2 + 1] = counter_packet_send >>16;
+
+                        uart_data_send[I2S_SAMP_PER_FRAME*2 + 1 + 2 - 2] = (uint16_t)(counter_packet_send >> 16);
+                        uart_data_send[I2S_SAMP_PER_FRAME*2 + 1 + 2 - 1] = (uint16_t)(counter_packet_send);
+
+                        uart_data_send[I2S_SAMP_PER_FRAME*2 + 1 + 4 - 2] = (uint16_t)(counter_adc_data_read >> 16);
+                        uart_data_send[I2S_SAMP_PER_FRAME*2 + 1 + 4 - 1] = (uint16_t)(counter_adc_data_read);
 
 
-            counter_packet_send++;
-            if(enable_UART_DEBUG)
-            {
-                memcpy(&uart_data_send[1],                            mic_data_1ch,      sizeof(mic_data_1ch));
-                memcpy(&uart_data_send[I2S_SAMP_PER_FRAME + 1],       raw_mic_data,     sizeof(raw_mic_data));
-                 //memcpy(&uart_data_send[I2S_SAMP_PER_FRAME * 2 + 1], raw_data_received, sizeof(raw_data_received));
-                uart_data_send[0]= (40u << 8u) + 41u;   //start bytes for MATLAB ")("
-                UART_write(uart, uart_data_send, sizeof(uart_data_send));
+                        UART_write(uart, uart_data_send, sizeof(uart_data_send));
+                    }
+                }
             }
         }
         break;
@@ -708,11 +727,6 @@ void USER_task_Handler (pzMsg_t *pMsg)
 
         case PZ_SEND_START_STREAM_EVT:
         {
-            skip_counter_packet_send = 0;
-            resend_error_counter_packet_send = 0;
-            error_counter_packet_send = 0;
-            counter_packet_send = 0;
-            counter_packet_received = 0;
             start_voice_handle();
         }
         break;
@@ -821,10 +835,11 @@ void USER_task_Handler (pzMsg_t *pMsg)
                 }
                 else
                 {
+                    counter_packet_send++;
 #ifdef LOGGING
-                update_UART_Messages(PACKET_SENT_MESSAGE_TYPE);
-                ProjectZero_enqueueMsg(PZ_APP_MSG_Send_message_BLE, NULL);
-                ProjectZero_enqueueMsg(PZ_APP_MSG_Send_message_Buf_Status, NULL);
+                    update_UART_Messages(PACKET_SENT_MESSAGE_TYPE);
+                    ProjectZero_enqueueMsg(PZ_APP_MSG_Send_message_BLE, NULL);
+                    ProjectZero_enqueueMsg(PZ_APP_MSG_Send_message_Buf_Status, NULL);
 #endif
                 }
             }

@@ -37,7 +37,7 @@
 #define V_STREAM_OUTPUT_SOUND_LEN                (TRANSMIT_DATA_LENGTH - PACKET_CODEC_META_DATA - PACKET_PACKET_NUMBER_LENGHT )// - 7
 
 
-#define MAILBOX_DEPTH       20
+#define MAILBOX_DEPTH       30
 #define RESEND_DELAY        (SAMP_PERIOD/2.0f)
 /******I2S Start ******/
 //#define I2S_MEM_BASE                        (GPRAM_BASE + FlashSectorSizeGet())

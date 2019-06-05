@@ -3,9 +3,9 @@
  *
  * Code generated for Simulink model 'LPF'.
  *
- * Model version                  : 1.91
+ * Model version                  : 1.97
  * Simulink Coder version         : 9.1 (R2019a) 23-Nov-2018
- * C/C++ source code generated on : Sun Jun  2 14:53:58 2019
+ * C/C++ source code generated on : Sun Jun  2 18:54:10 2019
  *
  * Target selection: ert.tlc
  * Embedded hardware selection: ARM Compatible->ARM Cortex
@@ -22,8 +22,10 @@ const ConstP rtConstP = {
   /* Computed Parameter: Filter_Coefficients
    * Referenced by: '<Root>/Filter'
    */
-  { -1038, -164, 1996, -2924, -292, 18139, 18139, -292, -2924, 1996, -164, -1038
-  }
+  { 0.0103798052F, 0.0385007896F, -0.0116923749F, -0.0292889867F, 0.0743830875F,
+    -0.0741444826F, -0.042586118F, 0.569996595F, 0.569996595F, -0.042586118F,
+    -0.0741444826F, 0.0743830875F, -0.0292889867F, -0.0116923749F, 0.0385007896F,
+    0.0103798052F }
 };
 
 /*

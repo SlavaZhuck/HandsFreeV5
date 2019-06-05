@@ -3,9 +3,9 @@
  *
  * Code generated for Simulink model 'Echo_cancel'.
  *
- * Model version                  : 1.30
+ * Model version                  : 1.40
  * Simulink Coder version         : 9.1 (R2019a) 23-Nov-2018
- * C/C++ source code generated on : Sun Jun  2 15:49:13 2019
+ * C/C++ source code generated on : Sun Jun  2 18:48:27 2019
  *
  * Target selection: ert.tlc
  * Embedded hardware selection: ARM Compatible->ARM Cortex
@@ -112,7 +112,6 @@ void MWSPCGlmsnb_S(const real32_T xeC[], const real32_T deC[], real32_T mueC,
 void Echo_cancel_step(void)
 {
   boolean_T needAdapteC;
-  int32_T ieC;
 
   /* S-Function (sdsplms): '<Root>/LMS Filter1' incorporates:
    *  Inport: '<Root>/Enable'
@@ -120,9 +119,9 @@ void Echo_cancel_step(void)
    */
   needAdapteC = false;
   if (rtUeC.ReseteC) {
-    for (ieC = 0; ieC < 7; ieC++) {
-      rtDWorkeC.LMSFilter1_WGT_IC_DWORKeC[ieC] = 0.0F;
-    }
+    rtDWorkeC.LMSFilter1_WGT_IC_DWORKeC[0] = 0.0F;
+    rtDWorkeC.LMSFilter1_WGT_IC_DWORKeC[1] = 0.0F;
+    rtDWorkeC.LMSFilter1_WGT_IC_DWORKeC[2] = 0.0F;
   }
 
   if (rtUeC.EnableeC) {
@@ -139,7 +138,7 @@ void Echo_cancel_step(void)
   MWSPCGlmsnb_S(&rtUeC.BLE_receiveeC, &rtUeC.MIC_dataeC, 0.02F,
                 &rtDWorkeC.LMSFilter1_BUFF_IDX_DWORKeC,
                 &rtDWorkeC.LMSFilter1_IN_BUFFER_DWORKeC[0U],
-                &rtDWorkeC.LMSFilter1_WGT_IC_DWORKeC[0U], 7, 1.0F, 1,
+                &rtDWorkeC.LMSFilter1_WGT_IC_DWORKeC[0U], 3, 1.0F, 1,
                 &rtYeC.debug_erroreC, &rtYeC.OutputeC, &rtYeC.debug_coeffseC[0U],
                 needAdapteC);
 }

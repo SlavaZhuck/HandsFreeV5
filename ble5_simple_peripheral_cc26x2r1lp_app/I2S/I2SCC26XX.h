@@ -233,6 +233,7 @@ extern "C" {
 #define ti_sysbios_family_arm_m3_Hwi__nolocalnames
 #include <ti/sysbios/knl/Semaphore.h>
 #include <ti/sysbios/family/arm/m3/Hwi.h>
+#include "../Application/HandsFree.h"
 
 /*!
  *  @brief      Define to control debug mode
@@ -245,10 +246,10 @@ extern "C" {
 /*!
  *  At least three elements must exist for good flow in driver
  */
-#define I2SCC26XX_MIN_ALLOWED_QUEUE_SIZE            3
+#define I2SCC26XX_MIN_ALLOWED_QUEUE_SIZE            10
 
 #ifndef I2SCC26XX_QUEUE_SIZE
-#define    I2SCC26XX_QUEUE_SIZE                     7
+#define    I2SCC26XX_QUEUE_SIZE                     15
 #endif // !defined(I2SCC26XX_QUEUE_SIZE)
 
 /*!
