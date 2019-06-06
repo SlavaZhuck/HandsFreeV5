@@ -8,7 +8,7 @@
 #ifndef POWER_BATTERY_H_
 #define POWER_BATTERY_H_
     /******ADC Start ******/
-#define ADC_SWITCH_TIMEOUT      1 //ms
+#define ADC_SWITCH_TIMEOUT      30 //ms
 #define ADCBUFSIZE      1
 #define SAMPFREQ        10000
 #define ADC_VOLTAGE_MEASURE_PIN   CC26X2R1_LAUNCHXL_ADCBUF0CHANNEL5

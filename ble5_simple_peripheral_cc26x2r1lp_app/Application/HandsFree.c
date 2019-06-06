@@ -67,7 +67,7 @@ GPTimerCC26XX_Value timestamp_NG_dif;
 struct power_struct in_power;
 bool enable_NoiseGate = false;
 /***********Echo compensation****************************************************/
-#define EC_FILTER_SIZE          (5u)
+#define EC_FILTER_SIZE          (3u)
 GPTimerCC26XX_Value timestamp_EC_start;
 GPTimerCC26XX_Value timestamp_EC_stop;
 GPTimerCC26XX_Value timestamp_EC_dif;
