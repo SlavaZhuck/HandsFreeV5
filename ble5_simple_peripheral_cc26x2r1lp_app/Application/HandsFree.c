@@ -564,7 +564,7 @@ void USER_task_Handler (pzMsg_t *pMsg)
                 Mailbox_pend(mailbox, packet_data, BIOS_NO_WAIT);
 
                 timestamp_decode_start =  GPTimerCC26XX_getValue(measure_tim_hdl);
-//                decrypt_packet(packet_data);
+                decrypt_packet(packet_data);
                 int16_t temp_current = packet_data[V_STREAM_OUTPUT_SOUND_LEN + 1] | packet_data[V_STREAM_OUTPUT_SOUND_LEN] << 8;
 
                 ima_Decode_state.current = (int32_t)temp_current;
@@ -577,15 +577,15 @@ void USER_task_Handler (pzMsg_t *pMsg)
                 previous_receive_counter = counter_packet_received;
 
             }else{
-                memset ( packet_data,   0, sizeof(packet_data) );
-                memset ( raw_data_received, 0, sizeof(raw_data_received));
-                memset ( mic_data_1ch,  0, sizeof(mic_data_1ch));
+                memset ( packet_data,   0xA5, sizeof(packet_data) );
+                memset ( raw_data_received, 0xA5A5, sizeof(raw_data_received));
+                memset ( mic_data_1ch,  0xA5A5, sizeof(mic_data_1ch));
             }
 
             bufferRequest.buffersRequested = I2SCC26XX_BUFFER_IN_AND_OUT;
 
             gotBufferInOut = I2SCC26XX_requestBuffer(i2sHandle, &bufferRequest);
-            if (gotBufferInOut)
+            while (gotBufferInOut)
             {
                 memcpy(bufferRequest.bufferOut, raw_data_received, sizeof(raw_data_received) / 2 );
                 memcpy(mic_data_1ch, bufferRequest.bufferIn, sizeof(mic_data_1ch) / 2 );
@@ -599,7 +599,7 @@ void USER_task_Handler (pzMsg_t *pMsg)
 
                 bufferRequest.buffersRequested = I2SCC26XX_BUFFER_IN_AND_OUT;
                 gotBufferInOut = I2SCC26XX_requestBuffer(i2sHandle, &bufferRequest);
-                if (gotBufferInOut)
+                while (gotBufferInOut)
                 {
                     memcpy(bufferRequest.bufferOut, &raw_data_received[160], sizeof(raw_data_received) / 2 );
                     memcpy(&mic_data_1ch[160], bufferRequest.bufferIn, sizeof(mic_data_1ch) / 2);
@@ -613,7 +613,6 @@ void USER_task_Handler (pzMsg_t *pMsg)
                             rtU.In1 = (float)mic_data_1ch[i];
                             rt_OneStep();
                             mic_data_1ch[i] = (int16)rtY.Out1;
-
                         }
                         timestamp_LPF_stop =  GPTimerCC26XX_getValue(measure_tim_hdl);
                         timestamp_LPF_dif = timestamp_LPF_stop - timestamp_LPF_start;
@@ -675,7 +674,7 @@ void USER_task_Handler (pzMsg_t *pMsg)
                     timestamp_encode_stop =  GPTimerCC26XX_getValue(measure_tim_hdl);
                     timestamp_encode_dif = timestamp_encode_stop - timestamp_encode_start;
 
-        //            encrypt_packet(send_array);
+                    encrypt_packet(send_array);
                     send_status = DataService_SetParameter(DS_STREAM_OUTPUT_ID, DS_STREAM_OUTPUT_LEN, send_array);
                     if((send_status != SUCCESS)/* || (send_status == 0x15)*/) /* 0x15 bleNoResources*/
                     {
@@ -695,26 +694,25 @@ void USER_task_Handler (pzMsg_t *pMsg)
                         ProjectZero_enqueueMsg(PZ_APP_MSG_Send_message_Buf_Status, NULL);
 #endif
                     }
-
-                    if(enable_UART_DEBUG)
-                    {
-                        memcpy(&uart_data_send[1],                            mic_data_1ch,      sizeof(mic_data_1ch));
-                        memcpy(&uart_data_send[I2S_SAMP_PER_FRAME + 1],       raw_data_received,     sizeof(raw_data_received));
-                        memcpy(&uart_data_send[I2S_SAMP_PER_FRAME + 1],       raw_data_received,     sizeof(raw_data_received));
-                         //memcpy(&uart_data_send[I2S_SAMP_PER_FRAME * 2 + 1], raw_data_received, sizeof(raw_data_received));
-                        uart_data_send[0]= (40u << 8u) + 41u;   //start bytes for MATLAB ")("
-                        uart_data_send[I2S_SAMP_PER_FRAME*2 + 1] = counter_packet_send >>16;
-
-                        uart_data_send[I2S_SAMP_PER_FRAME*2 + 1 + 2 - 2] = (uint16_t)(counter_packet_send >> 16);
-                        uart_data_send[I2S_SAMP_PER_FRAME*2 + 1 + 2 - 1] = (uint16_t)(counter_packet_send);
-
-                        uart_data_send[I2S_SAMP_PER_FRAME*2 + 1 + 4 - 2] = (uint16_t)(counter_adc_data_read >> 16);
-                        uart_data_send[I2S_SAMP_PER_FRAME*2 + 1 + 4 - 1] = (uint16_t)(counter_adc_data_read);
-
-
-                        UART_write(uart, uart_data_send, sizeof(uart_data_send));
-                    }
                 }
+            }
+            if(enable_UART_DEBUG)
+            {
+                memcpy(&uart_data_send[1],                            mic_data_1ch,      sizeof(mic_data_1ch));
+                memcpy(&uart_data_send[I2S_SAMP_PER_FRAME + 1],       raw_data_received,     sizeof(raw_data_received));
+                memcpy(&uart_data_send[I2S_SAMP_PER_FRAME + 1],       raw_data_received,     sizeof(raw_data_received));
+                 //memcpy(&uart_data_send[I2S_SAMP_PER_FRAME * 2 + 1], raw_data_received, sizeof(raw_data_received));
+                uart_data_send[0]= (40u << 8u) + 41u;   //start bytes for MATLAB ")("
+                uart_data_send[I2S_SAMP_PER_FRAME*2 + 1] = counter_packet_send >>16;
+
+                uart_data_send[I2S_SAMP_PER_FRAME*2 + 1 + 2 - 2] = (uint16_t)(counter_packet_send >> 16);
+                uart_data_send[I2S_SAMP_PER_FRAME*2 + 1 + 2 - 1] = (uint16_t)(counter_packet_send);
+
+                uart_data_send[I2S_SAMP_PER_FRAME*2 + 1 + 4 - 2] = (uint16_t)(counter_adc_data_read >> 16);
+                uart_data_send[I2S_SAMP_PER_FRAME*2 + 1 + 4 - 1] = (uint16_t)(counter_adc_data_read);
+
+
+                UART_write(uart, uart_data_send, sizeof(uart_data_send));
             }
         }
         break;
@@ -820,7 +818,7 @@ void USER_task_Handler (pzMsg_t *pMsg)
         break;
 
         case PZ_APP_MSG_Resend_Packet:
-            if(counter_packet_send == (save_counter_packet_send + 1))
+            if(counter_packet_send == save_counter_packet_send)
             {
                 send_status = DataService_SetParameter(DS_STREAM_OUTPUT_ID, DS_STREAM_OUTPUT_LEN, send_array);
                 if((send_status != SUCCESS)/* || (send_status == 0x15)*/) /* 0x15 bleNoResources*/
@@ -1047,7 +1045,6 @@ static void encrypt_packet(uint8_t *packet)
     memset(tmp_packet, 0, V_STREAM_OUTPUT_SOUND_LEN + PACKET_CODEC_META_DATA);
     memcpy(tmp_packet, packet, V_STREAM_OUTPUT_SOUND_LEN + PACKET_CODEC_META_DATA);
 
-    CryptoKeyPlaintext_initKey(&cryptoKey, (uint8_t*) global_key, sizeof(global_key));
 
     /* Perform a single step encrypt operation of the plain text */
     AESCBC_Operation_init(&operationOneStepEncrypt);
@@ -1084,7 +1081,6 @@ static void decrypt_packet(uint8_t *packet)
     uint8_t tmp_packet[V_STREAM_OUTPUT_SOUND_LEN + PACKET_CODEC_META_DATA];
     memcpy(tmp_packet, packet, V_STREAM_OUTPUT_SOUND_LEN + PACKET_CODEC_META_DATA);
 
-    CryptoKeyPlaintext_initKey(&cryptoKey, (uint8_t*) global_key, sizeof(global_key));
 
     AESCBC_Operation_init(&operationOneStepDecrypt);
     operationOneStepDecrypt.key            = &cryptoKey;
@@ -1125,14 +1121,14 @@ uint8_t read_aes_key(uint8_t *key)
     status = osal_snv_read(KEY_SNV_ID, KEY_SIZE, key);
     if(status != SUCCESS)
     {
-        memcpy(global_key, default_key, KEY_SIZE);
+        memcpy(key, default_key, KEY_SIZE);
     }
+    CryptoKeyPlaintext_initKey(&cryptoKey, (uint8_t*) key, sizeof(*key));
 
     return status;
 }
 
 uint8_t write_aes_key(uint8_t *key)
 {
-    CryptoKeyPlaintext_initKey(&cryptoKey, (uint8_t*) key, sizeof(*key));
     return (osal_snv_write(KEY_SNV_ID, KEY_SIZE, key));
 }
