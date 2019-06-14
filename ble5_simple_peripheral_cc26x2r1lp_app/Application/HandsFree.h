@@ -97,7 +97,6 @@ struct event_indicator_struct_BLE {
     sid_dataType SID;
     uint32_t timestamp;
     uint32_t packet_number;
-    uint8_t null_terminator ;
 }__attribute__((packed));
 
 struct event_indicator_struct_BUF_status {
@@ -106,7 +105,6 @@ struct event_indicator_struct_BUF_status {
     sid_dataType SID;
     uint32_t timestamp;
     uint8_t buff_status;
-    uint8_t null_terminator;
 }__attribute__((packed));
 
 

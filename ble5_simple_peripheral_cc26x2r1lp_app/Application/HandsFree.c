@@ -113,12 +113,13 @@ static void decrypt_packet(uint8_t *packet);
 
 
 #ifdef LOGGING
-static uint8_t received_SID[SID_LENGTH] = {0};
+static uint8_t received_SID[SID_LENGTH] = {0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19};
 struct event_indicator_struct_BUF_status event_BUF_status_message;
 struct event_indicator_struct_BLE event_BLE_message;
-uint8_t BUF_status_message_UART_buffer[BASE64_SIZE(sizeof(event_BUF_status_message))];
-uint8_t BLE_message_UART_buffer[BASE64_SIZE(sizeof(event_BLE_message))];
-
+uint8_t BUF_status_message_UART_buffer[BASE64_SIZE(sizeof(event_BUF_status_message)) + 1];
+uint8_t BLE_message_UART_buffer[BASE64_SIZE(sizeof(event_BLE_message)) + 1];
+uint8_t ascii_buffer_UART_send[sizeof(BUF_status_message_UART_buffer) + 10];
+int32_t ascii_buffer_index = 0;
 static void update_UART_Messages (uint8_t message_type);
 #endif
 
@@ -236,6 +237,31 @@ char *base64_encode(char *out, int out_size, const uint8_t *in, int in_size)
 
     return ret;
 }
+
+char * itoa (int value, char *result, int base)
+{
+    // check that the base if valid
+    if (base < 2 || base > 36) { *result = '\0'; return result; }
+
+    char* ptr = result, *ptr1 = result, tmp_char;
+    int tmp_value;
+
+    do {
+        tmp_value = value;
+        value /= base;
+        *ptr++ = "zyxwvutsrqponmlkjihgfedcba9876543210123456789abcdefghijklmnopqrstuvwxyz" [35 + (tmp_value - value * base)];
+    } while ( value );
+
+    // Apply negative sign
+    if (tmp_value < 0) *ptr++ = '-';
+    *ptr-- = '\0';
+    while (ptr1 < ptr) {
+        tmp_char = *ptr;
+        *ptr--= *ptr1;
+        *ptr1++ = tmp_char;
+    }
+    return result;
+}
 #endif
 
 void rt_OneStep(void);
@@ -279,7 +305,11 @@ void start_voice_handle(void)
     counter_packet_send = 0;
     counter_adc_data_read = 0;
     counter_packet_received = 0;
-
+#ifdef LOGGING
+//    memset(received_SID, 0, SID_LENGTH);
+//    memset(&event_BLE_message, 0, sizeof(event_BLE_message)) ;
+//    memset(&event_BUF_status_message, 0, sizeof(event_BUF_status_message)) ;
+#endif
     max9860_I2C_Shutdown_state(0);//disable shutdown_mode
     //ProjectZero_enqueueMsg(PZ_APP_MSG_Load_vol, NULL);// read global vol level
     osal_snv_read(INIT_VOL_ADDR, 1, &current_volume);
@@ -289,6 +319,7 @@ void start_voice_handle(void)
     GPTimerCC26XX_start(measure_tim_hdl);
     I2SCC26XX_startStream(i2sHandle);
     stream_on = 1;
+
 }
 
 
@@ -320,11 +351,7 @@ void stop_voice_handle(void)
     /* save current volume level */
     //ProjectZero_enqueueMsg(PZ_APP_MSG_Write_vol, NULL);
     osal_snv_write(INIT_VOL_ADDR, 1, &current_volume);
-#ifdef LOGGING
-    memset(received_SID, 0, SID_LENGTH);
-    memset(&event_BLE_message, 0, sizeof(event_BLE_message)) ;
-    memset(&event_BUF_status_message, 0, sizeof(event_BUF_status_message)) ;
-#endif
+
 }
 
 
@@ -418,7 +445,7 @@ void HandsFree_init (void)
     }
     //macAddress = *((uint64_t *)(0x500012E8)) & 0xFFFFFFFFFFFFFF;
 
-    UART_write(uart, macAddress, sizeof(macAddress));
+    //UART_write(uart, macAddress, sizeof(macAddress));
     int rxBytes = UART_read(uart, rxBuf, wantedRxBytes);
 
    AESCBC_init();
@@ -438,8 +465,6 @@ void HandsFree_init (void)
         event_BUF_status_message.MAC_addr[i] = macAddress[i];
         event_BLE_message.MAC_addr[i] = macAddress[i];
     }
-    event_BUF_status_message.null_terminator = 0x00;
-    event_BLE_message.null_terminator = 0x00;
     event_BUF_status_message.message_type = RECEIVE_BUFFER_STATUS;
 #endif
 
@@ -797,14 +822,33 @@ void USER_task_Handler (pzMsg_t *pMsg)
 #ifdef LOGGING
         case PZ_APP_MSG_Send_message_BLE:
         {
-            base64_encode((char *)BLE_message_UART_buffer, (int32_t)BASE64_SIZE(sizeof(BLE_message_UART_buffer)), (const uint8_t *)&event_BLE_message, sizeof(event_BLE_message));
+            base64_encode((char *)BLE_message_UART_buffer, (int32_t)(sizeof(BLE_message_UART_buffer) -1), (const uint8_t *)&event_BLE_message, sizeof(event_BLE_message));
+            BLE_message_UART_buffer[sizeof(BLE_message_UART_buffer) - 1] = 0x0A;
             UART_write(uart, BLE_message_UART_buffer, sizeof(BLE_message_UART_buffer));
+
+           // ascii_buffer_UART_send[sizeof(BUF_status_message_UART_buffer) + 10];
+            int32_t ascii_buffer_index = 0;
+            itoa (event_BLE_message.message_type, &ascii_buffer_UART_send[ascii_buffer_index], 10);
+            ascii_buffer_index += sizeof(event_BLE_message.message_type);
+            itoa (event_BLE_message.MAC_addr, &ascii_buffer_UART_send[ascii_buffer_index], 10);
+            ascii_buffer_index += sizeof(event_BLE_message.MAC_addr);
+            itoa (event_BLE_message.SID, &ascii_buffer_UART_send[ascii_buffer_index], 10);
+            ascii_buffer_index += sizeof(event_BLE_message.SID);
+            itoa (event_BLE_message.packet_number, &ascii_buffer_UART_send[ascii_buffer_index], 10);
+            ascii_buffer_index += sizeof(event_BLE_message.packet_number);
+            itoa (event_BLE_message.timestamp, &ascii_buffer_UART_send[ascii_buffer_index], 10);
+            ascii_buffer_index += sizeof(event_BLE_message.timestamp);
+            ascii_buffer_UART_send[++ascii_buffer_index] = 0x0A;
+
+            UART_write(uart, ascii_buffer_UART_send, ascii_buffer_index);
+
         }
         break;
 
         case PZ_APP_MSG_Send_message_Buf_Status:
         {
-            base64_encode((char *)BUF_status_message_UART_buffer, (int32_t)BASE64_SIZE(sizeof(BUF_status_message_UART_buffer)), (const uint8_t *)&event_BUF_status_message, sizeof(event_BUF_status_message));
+            base64_encode((char *)BUF_status_message_UART_buffer, (int32_t)(sizeof(BUF_status_message_UART_buffer)-1), (const uint8_t *)&event_BUF_status_message, sizeof(event_BUF_status_message));
+            BUF_status_message_UART_buffer[sizeof(BUF_status_message_UART_buffer) - 1] = 0x0A;
             UART_write(uart, BUF_status_message_UART_buffer, sizeof(BUF_status_message_UART_buffer));
         }
         break;
