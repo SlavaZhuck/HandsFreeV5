@@ -18,75 +18,54 @@
 #include <GeneralDef.h>
 
 
-#define I2S_SAMP_PER_FRAME                320u
-#define TRANSMIT_DATA_LENGTH              167u  //bytes
-#define SID_LENGTH                        20u   //bytes
-#define MAC_SIZE                          6u   //bytes
+#define TRANSMIT_DATA_LENGTH              167u  /* size of 1 BLE packet*/
+#define SID_LENGTH                        20u   /* size of session identifier, used in LOGGING*/
+#define MAC_SIZE                          6u    /* size of mac address, used in LOGGING*/
 
-#define TMR_PERIOD                          ((48000000UL))
-#define LOW_STATE_TIME                      ((TMR_PERIOD / 10) * 9)
-#define HIGH_STATE_TIME                     ((TMR_PERIOD) - (LOW_STATE_TIME))
+#define TMR_PERIOD                          ((48000000UL))                      /* MCU frequency, 48 MHz*/
+#define LOW_STATE_TIME                      ((TMR_PERIOD / 10) * 9)             /* time for LED state is OFF, used in LED blinking*/
+#define HIGH_STATE_TIME                     ((TMR_PERIOD) - (LOW_STATE_TIME))   /* time for LED state is ON, used in LED blinking*/
 
-#define SAMP_PERIOD                       (20.0f)  //ms
-
-
-#define SAMP_TIME                         ((TMR_PERIOD) * (SAMP_PERIOD / 1000.0f) - 1)
-//#define SAMP_TIME                          (4799999/4)
-#define PACKET_CODEC_META_DATA                   (3u)
-#define PACKET_PACKET_NUMBER_LENGHT              (4u)
-#define V_STREAM_OUTPUT_SOUND_LEN                (TRANSMIT_DATA_LENGTH - PACKET_CODEC_META_DATA - PACKET_PACKET_NUMBER_LENGHT )// - 7
+#define SAMP_PERIOD                       (20.0f)  /* in ms. Period of BLE transmissions and read/write to I2S driver*/
 
 
-#define MAILBOX_DEPTH       30
-#define RESEND_DELAY        (SAMP_PERIOD/2.0f)
-/******I2S Start ******/
-//#define I2S_MEM_BASE                        (GPRAM_BASE + FlashSectorSizeGet())
+#define SAMP_TIME                         ((TMR_PERIOD) * (SAMP_PERIOD / 1000.0f) - 1)                                   /* SAMP_PERIOD recalculated to number of system timer ticks */
+#define PACKET_CODEC_META_DATA            (3u)                                                                           /* 3 bytes for sound codec meta data: previous amplitude and size of step*/
+#define PACKET_PACKET_NUMBER_LENGHT       (4u)                                                                           /* size of packet numer field, uint32_t = 4 bytes*/
+#define V_STREAM_OUTPUT_SOUND_LEN         (TRANSMIT_DATA_LENGTH - PACKET_CODEC_META_DATA - PACKET_PACKET_NUMBER_LENGHT ) /* size of sound data */
 
 
+#define MAILBOX_DEPTH       30                  /* size of BLE receiving FIFO */
+#define RESEND_DELAY        (SAMP_PERIOD/2.0f)  /* if BLE packet wasn't sent - after this time new attemp will be made */
 
-//#define NUM_OF_CHANNELS                     2
-//#define I2S_BUF                             sizeof(int16_t) * (I2S_SAMP_PER_FRAME *   \
-//                                            I2SCC26XX_QUEUE_SIZE * NUM_OF_CHANNELS)
-#define NUM_CHAN                        2
+/******I2S Start ************************************************************************************/
+#define I2S_SAMP_PER_FRAME              320u    /* number of frames per one SAMP_PERIOD*/
+#define NUM_CHAN                        2u      /* number if I2S channels: 1 for read and 1 for write*/
 
-/*
- * Configure for a 10ms frame @ 16kHz sample rate.
- * Note that the frame size variable is limited to a max size of 255.
- * It is an 8bit field in hardware (AIFDMACFG).
- */
-//#define FRAME_SIZE                      I2S_SAMP_PER_FRAME
 
-#define FRAME_SIZE                      160
+#define FRAME_SIZE                      160u    /* I2S number of samples in one driver read and write operation */
 
+/* memory buffer for I2S driver */
 #define I2S_TOTAL_QUEUE_MEM_SZ         (I2S_BLOCK_OVERHEAD_IN_BYTES *           \
                                         I2SCC26XX_QUEUE_SIZE *                  \
                                         NUM_CHAN)
-
+/* memory buffer for I2S driver */
 #define I2S_SAMPLE_MEMORY_SZ           (FRAME_SIZE *                            \
                                         I2SCC26XX_QUEUE_SIZE *                  \
                                         NUM_CHAN)
+/******I2S End ************************************************************************************/
 
-/******I2S End ******/
-
+/* Type of messages for LOGGING*/
 #define PACKET_RECEIVED_MESSAGE_TYPE 0u
 #define PACKET_SENT_MESSAGE_TYPE     1u
 #define PACKET_SENT_ERROR_TYPE       2u
 #define RECEIVE_BUFFER_STATUS        3u
 
-void start_voice_handle(void);
-void stop_voice_handle(void);
 
 void HandsFree_init (void);
 
-
-
-void blink_timer_callback(GPTimerCC26XX_Handle handle, GPTimerCC26XX_IntMask interruptMask);
-void samp_timer_callback(GPTimerCC26XX_Handle handle, GPTimerCC26XX_IntMask interruptMask);
-
-
 typedef uint8_t mac_dataType[MAC_SIZE];
 typedef uint8_t sid_dataType[SID_LENGTH];
-
 
 extern uint8_t read_aes_key(uint8_t *key);
 extern uint8_t write_aes_key(uint8_t *key);

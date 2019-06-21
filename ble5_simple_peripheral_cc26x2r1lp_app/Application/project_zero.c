@@ -162,7 +162,7 @@ PIN_Config ledPinTable[] = {
     PIN_TERMINATE
 };
 
-extern int stream_on;
+extern uint8_t stream_on;
 bool connection_occured = FALSE;
 /*********************************************************************
  * LOCAL FUNCTIONS

@@ -24,84 +24,15 @@
 #include "buttons.h"
 #include "power_battery.h"
 #include "Noise_TRSH.h"
-#include "../LPF/LPF.h"                       /* Model's header file */
+#include "../LPF/LPF.h"
 #include "../LPF/rtwtypes.h"
 #include "../Echo_cancel/Echo_cancel.h"
 
 #ifdef  LOGGING
-#define BASE64_SIZE(x)  (((x)+2) / 3 * 4 + 1)
+    #define BASE64_SIZE(x)  (((x)+2) / 3 * 4 + 1)
 #endif
-/* Timer variables ***************************************************/
-GPTimerCC26XX_Params tim_params;
-GPTimerCC26XX_Handle blink_tim_hdl = NULL;
-GPTimerCC26XX_Handle measure_tim_hdl = NULL;
-GPTimerCC26XX_Handle samp_tim_hdl = NULL;
-GPTimerCC26XX_Value load_val[2] = {LOW_STATE_TIME, HIGH_STATE_TIME};
-/*********************************************************************/
-/* CryptoKey storage */
-CryptoKey           cryptoKey;
-/* AESCBC variables */
-AESCBC_Operation    operationOneStepEncrypt;
-AESCBC_Operation    operationOneStepDecrypt;
-AESCBC_Handle       AESCBCHandle;
-uint8_t temp_crypto[V_STREAM_OUTPUT_SOUND_LEN + 3];
 
-/* Debug time variables ***************************************************/
-GPTimerCC26XX_Value timestamp_encode_start;
-GPTimerCC26XX_Value timestamp_encode_stop;
-GPTimerCC26XX_Value timestamp_encode_dif;
-GPTimerCC26XX_Value timestamp_decode_start;
-GPTimerCC26XX_Value timestamp_decode_stop;
-GPTimerCC26XX_Value timestamp_decode_dif;
-
-/***********LPF****************************************************/
-GPTimerCC26XX_Value timestamp_LPF_start;
-GPTimerCC26XX_Value timestamp_LPF_stop;
-GPTimerCC26XX_Value timestamp_LPF_dif;
-bool enable_LPF = false;
-
-/*****************NOISE GATE***********************************/
-GPTimerCC26XX_Value timestamp_NG_start;
-GPTimerCC26XX_Value timestamp_NG_stop;
-GPTimerCC26XX_Value timestamp_NG_dif;
-struct power_struct in_power;
-bool enable_NoiseGate = false;
-/***********Echo compensation****************************************************/
-#define EC_FILTER_SIZE          (3u)
-GPTimerCC26XX_Value timestamp_EC_start;
-GPTimerCC26XX_Value timestamp_EC_stop;
-GPTimerCC26XX_Value timestamp_EC_dif;
-bool enable_EC = false;
-float EC_data_debug[I2S_SAMP_PER_FRAME];
-float EC_filt_coeffs_debug[EC_FILTER_SIZE];
-
-/******Crypto key Start ******/
-#define KEY_SNV_ID                          BLE_NVID_CUST_START
-#define KEY_SIZE                            16
-#define INIT_VOL_ADDR                       BLE_NVID_CUST_START+1
-/******Crypto key End ******/
-
-extern ADCBuf_Conversion adc_conversion;
-extern ADCBuf_Handle adc_hdl;
-/******Uart Start ******/
-
-#define UART_BAUD_RATE 921600
-#define MAX_NUM_RX_BYTES    100   // Maximum RX bytes to receive in one go
-#define MAX_NUM_TX_BYTES    100   // Maximum TX bytes to send in one go
-#define WANTED_RX_BYTES     1     // Maximum TX bytes to send in one go
-
-UART_Handle uart;
-static UART_Params uartParams;
-
-uint8_t macAddress[MAC_SIZE];
-static uint32_t wantedRxBytes = WANTED_RX_BYTES;            // Number of bytes received so far
-static uint8_t rxBuf[MAX_NUM_RX_BYTES];   // Receive buffer
-bool enable_UART_DEBUG = false;
-
-//int16_t uart_data_send[I2S_SAMP_PER_FRAME+1];
-int16_t uart_data_send[I2S_SAMP_PER_FRAME * 2 + 1 + 2 + 2]; // 2 buffers, start bytes, 4 bytes counter send, 4 bytes adc counter
-
-/******Uart End ******/
+/******local functions START***************************************************/
 static void readCallback(UART_Handle handle, void *rxBuf, size_t size);
 static void writeCallback(UART_Handle handle_uart, void *rxBuf, size_t size);
 
@@ -110,43 +41,146 @@ static void AudioDuplex_enableCache();
 static void AudioDuplex_disableCache();
 static void encrypt_packet(uint8_t *packet);
 static void decrypt_packet(uint8_t *packet);
+static void rt_OneStep(void);
+static void Resend_BLEpacket_SwiFxn(UArg temp);
+static void start_voice_handle(void);
+static void stop_voice_handle(void);
+static void blink_timer_callback(GPTimerCC26XX_Handle handle, GPTimerCC26XX_IntMask interruptMask);
+static void samp_timer_callback(GPTimerCC26XX_Handle handle, GPTimerCC26XX_IntMask interruptMask);
+/******local functions END***************************************************/
+
+/* Timer variables START***************************************************/
+static GPTimerCC26XX_Params tim_params;
+static GPTimerCC26XX_Handle blink_tim_hdl = NULL;
+static GPTimerCC26XX_Handle measure_tim_hdl = NULL;
+static GPTimerCC26XX_Handle samp_tim_hdl = NULL;
+static GPTimerCC26XX_Value load_val[2] = {LOW_STATE_TIME, HIGH_STATE_TIME};
+/* Timer variables END***************************************************/
+
+/* Debug measure variables START***************************************************/
+static GPTimerCC26XX_Value timestamp_encode_start  = 0;
+static GPTimerCC26XX_Value timestamp_encode_stop   = 0;
+static GPTimerCC26XX_Value timestamp_encode_dif    = 0;
+static GPTimerCC26XX_Value timestamp_decode_start  = 0;
+static GPTimerCC26XX_Value timestamp_decode_stop   = 0;
+static GPTimerCC26XX_Value timestamp_decode_dif    = 0;
+
+static uint32_t counter_packet_send                = 0;
+static uint32_t counter_adc_data_read              = 0;
+static uint32_t save_counter_packet_send           = 0;
+static float packet_lost_percentage                = 0;
+static uint32_t error_counter_packet_send          = 0;
+static uint32_t skip_counter_packet_send           = 0;
+static uint32_t resend_error_counter_packet_send   = 0;
+/* Debug measure variables END***************************************************/
+
+/***********LPF START****************************************************/
+static GPTimerCC26XX_Value timestamp_LPF_start;
+static GPTimerCC26XX_Value timestamp_LPF_stop;
+static GPTimerCC26XX_Value timestamp_LPF_dif;
+
+bool enable_LPF = false;
+/***********LPF END****************************************************/
+
+/*****************NOISE GATE START***********************************/
+static GPTimerCC26XX_Value timestamp_NG_start;
+static GPTimerCC26XX_Value timestamp_NG_stop;
+static GPTimerCC26XX_Value timestamp_NG_dif;
+static struct power_struct in_power;
+
+bool enable_NoiseGate = false;
+/*****************NOISE GATE END***********************************/
+
+/***********Echo compensation START****************************************************/
+#define EC_FILTER_SIZE          (3u)
+
+GPTimerCC26XX_Value timestamp_EC_start;
+GPTimerCC26XX_Value timestamp_EC_stop;
+GPTimerCC26XX_Value timestamp_EC_dif;
+
+bool enable_EC = false;
+
+static float EC_data_debug[I2S_SAMP_PER_FRAME];
+static float EC_filt_coeffs_debug[EC_FILTER_SIZE];
+/***********Echo compensation END****************************************************/
+
+/******Crypto Start ***************************************************/
+#define KEY_SNV_ID                          (BLE_NVID_CUST_START)
+#define KEY_SIZE                            (16)
+#define INIT_VOL_ADDR                       (BLE_NVID_CUST_START+1)
+    /* CryptoKey storage */
+static CryptoKey           cryptoKey;
+/* global key applied in the system*/
+uint8_t global_key[KEY_SIZE] =
+                                {0x2B, 0x7E, 0x15, 0x16, 0x28, 0xAE, 0xD2, 0xA6,
+                                0xAB, 0xF7, 0x15, 0x88, 0x09, 0xCF, 0x4F, 0x3C};
+/* default key, if there were no write key operations*/
+static const uint8_t default_key[] =
+                                {0x2B, 0x7E, 0x15, 0x16, 0x28, 0xAE, 0xD2, 0xA6,
+                                0xAB, 0xF7, 0x15, 0x88, 0x09, 0xCF, 0x4F, 0x3C};
+    /* AESCBC variables */
+static AESCBC_Operation    operationOneStepEncrypt;
+static AESCBC_Operation    operationOneStepDecrypt;
+static AESCBC_Handle       AESCBCHandle;
+/******Crypto End ***************************************************/
+
+/******Uart Start ***************************************************/
+#define UART_BAUD_RATE      921600
+#define MAX_NUM_RX_BYTES    100   // Maximum RX bytes to receive in one go
+#define MAX_NUM_TX_BYTES    100   // Maximum TX bytes to send in one go
+#define WANTED_RX_BYTES     1     // number of waiting bytes in one go
+
+UART_Handle uart;
+static UART_Params uartParams;
+static uint32_t wantedRxBytes = WANTED_RX_BYTES;            // Number of bytes received so far
+static uint8_t rxBuf[MAX_NUM_RX_BYTES];   // Receive UART buffer
+static int16_t uart_data_send[I2S_SAMP_PER_FRAME * 2 + 1 + 2 + 2]; // 2 I2S buffers, 2 start bytes, 4 bytes counter send, 4 bytes adc counter send
+bool enable_UART_DEBUG = false;
+/******Uart End ***************************************************/
+
 
 
 #ifdef LOGGING
-static uint8_t received_SID[SID_LENGTH] = {0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19};
-struct event_indicator_struct_BUF_status event_BUF_status_message;
-struct event_indicator_struct_BLE event_BLE_message;
-uint8_t BUF_status_message_UART_buffer[BASE64_SIZE(sizeof(event_BUF_status_message)) + 1];
-uint8_t BLE_message_UART_buffer[BASE64_SIZE(sizeof(event_BLE_message)) + 1];
-uint8_t ascii_buffer_UART_send[sizeof(BUF_status_message_UART_buffer) + 10];
-int32_t ascii_buffer_index = 0;
-static void update_UART_Messages (uint8_t message_type);
+    static uint8_t received_SID[SID_LENGTH] = {0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19};
+    struct event_indicator_struct_BUF_status event_BUF_status_message;
+    struct event_indicator_struct_BLE event_BLE_message;
+    uint8_t BUF_status_message_UART_buffer[BASE64_SIZE(sizeof(event_BUF_status_message)) + 1];
+    uint8_t BLE_message_UART_buffer[BASE64_SIZE(sizeof(event_BLE_message)) + 1];
+    uint8_t ascii_buffer_UART_send[sizeof(BUF_status_message_UART_buffer) + 10];
+    int32_t ascii_buffer_index = 0;
+    static void update_UART_Messages (uint8_t message_type);
 #endif
 
-/* I2C variables *****************************************************/
+/* I2C variables START*****************************************************/
 static uint16_t i2c_read_delay;
+/* I2C variables END*****************************************************/
+
 /*********************************************************************/
+
+/****** global variables START****************************************/
 uint32_t battery_voltage;
-int stream_on = 0;
-extern bool enable_blink;
-
-extern PIN_Handle ledPinHandle;
-
-uint32_t counter_packet_send = 0;
-uint32_t counter_adc_data_read = 0;
-uint32_t save_counter_packet_send = 0;
-uint32_t counter_packet_received = 0;
-float packet_lost = 0;
-uint32_t error_counter_packet_send = 0;
-uint32_t skip_counter_packet_send = 0;
-uint32_t resend_error_counter_packet_send = 0;
-uint8_t send_status = 0;
-
-uint8_t send_array[DS_STREAM_OUTPUT_LEN];
 uint8_t current_volume = INIT_GAIN;
+uint8_t stream_on = 0;
+uint8_t macAddress[MAC_SIZE];
+/****** global variables END****************************************/
 
-/* I2S variables START*/
 
+/****** BLE receive/transmit variables and helpers START****************************************/
+static Clock_Struct Resend_BLEpacket_ChannelSwitchClock;
+static Clock_Handle Resend_BLEpacket_ClockHandle;
+static Mailbox_Handle mailbox;
+static uint8_t mailpost_usage;
+
+static uint8_t send_status = 0;
+static uint32_t counter_packet_received = 0;
+static uint32_t previous_receive_counter = 0;
+
+static uint8_t send_array[DS_STREAM_OUTPUT_LEN];
+static uint8_t packet_data[DS_STREAM_OUTPUT_LEN];
+/****** BLE receive/transmit variables and helpers END****************************************/
+
+
+/*************** I2S variables START ***************************************************/
 static I2SCC26XX_StreamNotification i2sStream;
 static I2SCC26XX_BufferRelease bufferRelease;
 static I2SCC26XX_StreamNotification i2sStream;
@@ -168,44 +202,30 @@ static I2SCC26XX_Params i2sParams =
     .currentStream          = &i2sStream
 };
 
-uint8_t packet_data[TRANSMIT_DATA_LENGTH];
-int16_t raw_data_received[I2S_SAMP_PER_FRAME];
-int16_t mic_data_1ch[I2S_SAMP_PER_FRAME];
-int16_t raw_mic_data[I2S_SAMP_PER_FRAME];
+static int16_t raw_data_received[I2S_SAMP_PER_FRAME];
+static int16_t mic_data_1ch[I2S_SAMP_PER_FRAME];
+//int16_t raw_mic_data[I2S_SAMP_PER_FRAME];
 
-bool gotBufferIn = false;
-bool gotBufferInOut = false;
-bool gotBufferOut = false;
+static bool gotBufferInOut = FALSE;
+/*************** I2S variables END ***************************************************/
 
-extern bool button_check;
-uint8_t global_key[KEY_SIZE] = {0x2B, 0x7E, 0x15, 0x16, 0x28, 0xAE, 0xD2, 0xA6,
-                        0xAB, 0xF7, 0x15, 0x88, 0x09, 0xCF, 0x4F, 0x3C};
+/******** codec START ***************************************************/
+static ima_state ima_Encode_state;
+static ima_state ima_Decode_state;
+/******** codec END ***************************************************/
 
-
-
-
-/* I2S variables END*/
-static Mailbox_Handle mailbox;
-static uint8_t mailpost_usage;
-/* codec */
+/******** extern variables START ***************************************************/
+extern Clock_Handle ADC_ChannelSwitchClockHandle;
+extern ADCBuf_Conversion adc_conversion;
+extern ADCBuf_Handle adc_hdl;
 extern pzConnRec_t connList[MAX_NUM_BLE_CONNS];
 extern bool connection_occured;
 extern List_List paramUpdateList;
+extern bool button_check;
+extern bool enable_blink;
+extern PIN_Handle ledPinHandle;
+/******** extern variables END ***************************************************/
 
-
-static ima_state ima_Encode_state;
-static ima_state ima_Decode_state;
-static uint32_t previous_receive_counter = 0;
-/* codec end */
-
-/* resend clock */
-static Clock_Struct Resend_BLEpacket_ChannelSwitchClock;
-static Clock_Handle Resend_BLEpacket_ClockHandle;
-
-static void Resend_BLEpacket_SwiFxn(UArg temp);
-
-
-extern Clock_Handle ADC_ChannelSwitchClockHandle;
 
 #ifdef LOGGING
 char *base64_encode(char *out, int out_size, const uint8_t *in, int in_size)
@@ -238,33 +258,9 @@ char *base64_encode(char *out, int out_size, const uint8_t *in, int in_size)
     return ret;
 }
 
-char * itoa (int value, char *result, int base)
-{
-    // check that the base if valid
-    if (base < 2 || base > 36) { *result = '\0'; return result; }
-
-    char* ptr = result, *ptr1 = result, tmp_char;
-    int tmp_value;
-
-    do {
-        tmp_value = value;
-        value /= base;
-        *ptr++ = "zyxwvutsrqponmlkjihgfedcba9876543210123456789abcdefghijklmnopqrstuvwxyz" [35 + (tmp_value - value * base)];
-    } while ( value );
-
-    // Apply negative sign
-    if (tmp_value < 0) *ptr++ = '-';
-    *ptr-- = '\0';
-    while (ptr1 < ptr) {
-        tmp_char = *ptr;
-        *ptr--= *ptr1;
-        *ptr1++ = tmp_char;
-    }
-    return result;
-}
 #endif
 
-void rt_OneStep(void);
+
 
 void rt_OneStep(void)
   {
@@ -460,6 +456,11 @@ void HandsFree_init (void)
     read_aes_key(global_key);
     CryptoKeyPlaintext_initKey(&cryptoKey, (uint8_t*) global_key, sizeof(global_key));
 #ifdef LOGGING
+    for(uint16_t i = 0 ; i < sizeof(event_BUF_status_message.SID); i++)
+    {
+        event_BUF_status_message.SID[i] = received_SID[i];
+        event_BLE_message.SID[i] = received_SID[i];
+    }
     for(uint16_t i = 0 ; i < sizeof(event_BUF_status_message.MAC_addr) ; i++)
     {
         event_BUF_status_message.MAC_addr[i] = macAddress[i];
@@ -618,9 +619,8 @@ void USER_task_Handler (pzMsg_t *pMsg)
                 bufferRelease.bufferHandleOut = bufferRequest.bufferHandleOut;
                 bufferRelease.bufferHandleIn = bufferRequest.bufferHandleIn;
                 I2SCC26XX_releaseBuffer(i2sHandle, &bufferRelease);
-                gotBufferInOut = 0;
+                gotBufferInOut = FALSE;
                 i2c_read_delay++;
-
 
                 bufferRequest.buffersRequested = I2SCC26XX_BUFFER_IN_AND_OUT;
                 gotBufferInOut = I2SCC26XX_requestBuffer(i2sHandle, &bufferRequest);
@@ -634,7 +634,7 @@ void USER_task_Handler (pzMsg_t *pMsg)
                         timestamp_LPF_start =  GPTimerCC26XX_getValue(measure_tim_hdl);
                         for(uint16_t i = 0 ; i< I2S_SAMP_PER_FRAME; i++)
                         {
-                            raw_mic_data[i] = mic_data_1ch[i];
+                            //raw_mic_data[i] = mic_data_1ch[i];
                             rtU.In1 = (float)mic_data_1ch[i];
                             rt_OneStep();
                             mic_data_1ch[i] = (int16)rtY.Out1;
@@ -643,9 +643,9 @@ void USER_task_Handler (pzMsg_t *pMsg)
                         timestamp_LPF_dif = timestamp_LPF_stop - timestamp_LPF_start;
                     }
 
-                    timestamp_EC_start =  GPTimerCC26XX_getValue(measure_tim_hdl);
                     if(enable_EC) // 500k- 630k
                     {
+                        timestamp_EC_start =  GPTimerCC26XX_getValue(measure_tim_hdl);
                         for(uint16_t i = 0 ; i< I2S_SAMP_PER_FRAME; i++)
                         {
                             rtUeC.EnableeC = TRUE;
@@ -665,8 +665,11 @@ void USER_task_Handler (pzMsg_t *pMsg)
                     }
                     else
                     {
+                        timestamp_EC_start =  GPTimerCC26XX_getValue(measure_tim_hdl);
                         rtUeC.ReseteC = TRUE;
                         Echo_cancel_step();
+                        timestamp_EC_stop =  GPTimerCC26XX_getValue(measure_tim_hdl);
+                        timestamp_EC_dif = timestamp_EC_stop - timestamp_EC_start;
                     }
                     if(enable_NoiseGate)
                     {
@@ -680,7 +683,7 @@ void USER_task_Handler (pzMsg_t *pMsg)
                     bufferRelease.bufferHandleOut = bufferRequest.bufferHandleOut;
                     bufferRelease.bufferHandleIn = bufferRequest.bufferHandleIn;
                     I2SCC26XX_releaseBuffer(i2sHandle, &bufferRelease);
-                    gotBufferInOut = 0;
+                    gotBufferInOut = FALSE;
                     i2c_read_delay++;
                     timestamp_encode_start =  GPTimerCC26XX_getValue(measure_tim_hdl);
 
@@ -825,23 +828,6 @@ void USER_task_Handler (pzMsg_t *pMsg)
             base64_encode((char *)BLE_message_UART_buffer, (int32_t)(sizeof(BLE_message_UART_buffer) -1), (const uint8_t *)&event_BLE_message, sizeof(event_BLE_message));
             BLE_message_UART_buffer[sizeof(BLE_message_UART_buffer) - 1] = 0x0A;
             UART_write(uart, BLE_message_UART_buffer, sizeof(BLE_message_UART_buffer));
-
-           // ascii_buffer_UART_send[sizeof(BUF_status_message_UART_buffer) + 10];
-            int32_t ascii_buffer_index = 0;
-            itoa (event_BLE_message.message_type, &ascii_buffer_UART_send[ascii_buffer_index], 10);
-            ascii_buffer_index += sizeof(event_BLE_message.message_type);
-            itoa (event_BLE_message.MAC_addr, &ascii_buffer_UART_send[ascii_buffer_index], 10);
-            ascii_buffer_index += sizeof(event_BLE_message.MAC_addr);
-            itoa (event_BLE_message.SID, &ascii_buffer_UART_send[ascii_buffer_index], 10);
-            ascii_buffer_index += sizeof(event_BLE_message.SID);
-            itoa (event_BLE_message.packet_number, &ascii_buffer_UART_send[ascii_buffer_index], 10);
-            ascii_buffer_index += sizeof(event_BLE_message.packet_number);
-            itoa (event_BLE_message.timestamp, &ascii_buffer_UART_send[ascii_buffer_index], 10);
-            ascii_buffer_index += sizeof(event_BLE_message.timestamp);
-            ascii_buffer_UART_send[++ascii_buffer_index] = 0x0A;
-
-            UART_write(uart, ascii_buffer_UART_send, ascii_buffer_index);
-
         }
         break;
 
@@ -988,7 +974,7 @@ void ProjectZero_DataService_ValueChangeHandler(
         ProjectZero_enqueueMsg(PZ_APP_MSG_Send_message_BLE, NULL);
         ProjectZero_enqueueMsg(PZ_APP_MSG_Send_message_Buf_Status, NULL);
 #endif
-        packet_lost = 100.0f * ((float)counter_packet_send - (float)counter_packet_received) / (float)counter_packet_send;
+        packet_lost_percentage = 100.0f * ((float)counter_packet_send - (float)counter_packet_received) / (float)counter_packet_send;
         // -------------------------
         // Do something useful with pCharData->data here
         break;
@@ -1017,8 +1003,6 @@ static void bufRdy_callback(I2SCC26XX_Handle handle, I2SCC26XX_StreamNotificatio
 
     if (streamStatus == I2SCC26XX_STREAM_BUFFER_READY || streamStatus == I2SCC26XX_STREAM_BUFFER_READY_BUT_NO_AVAILABLE_BUFFERS)
     {
-//        gotBufferOut = true;
-//        gotBufferIn = true;
 //        gotBufferInOut = true;
 
     }
@@ -1158,9 +1142,7 @@ static void decrypt_packet(uint8_t *packet)
 uint8_t read_aes_key(uint8_t *key)
 {
     uint8_t status;
-    static uint8_t default_key[] =
-        {0x2B, 0x7E, 0x15, 0x16, 0x28, 0xAE, 0xD2, 0xA6,
-        0xAB, 0xF7, 0x15, 0x88, 0x09, 0xCF, 0x4F, 0x3C};
+
 
     status = osal_snv_read(KEY_SNV_ID, KEY_SIZE, key);
     if(status != SUCCESS)
