@@ -246,10 +246,10 @@ extern "C" {
 /*!
  *  At least three elements must exist for good flow in driver
  */
-#define I2SCC26XX_MIN_ALLOWED_QUEUE_SIZE            10
+#define I2SCC26XX_MIN_ALLOWED_QUEUE_SIZE            3
 
 #ifndef I2SCC26XX_QUEUE_SIZE
-#define    I2SCC26XX_QUEUE_SIZE                     15
+#define    I2SCC26XX_QUEUE_SIZE                     7
 #endif // !defined(I2SCC26XX_QUEUE_SIZE)
 
 /*!

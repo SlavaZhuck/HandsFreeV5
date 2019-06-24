@@ -12,7 +12,8 @@
 #include "max9860_i2c.h"
 #include "I2S/I2SCC26XX.h"
 #include <ti/sysbios/family/arm/m3/Hwi.h>
-#include "ima_codec/ima.h"
+#include "codec/SitADPCM.h"
+//#include "ima_codec/ima.h"
 #include <ti/sysbios/knl/Mailbox.h>
 #include "Uart_Parser.h"
 #include "Uart_commands.h"
@@ -55,6 +56,8 @@ static GPTimerCC26XX_Handle blink_tim_hdl = NULL;
 static GPTimerCC26XX_Handle measure_tim_hdl = NULL;
 static GPTimerCC26XX_Handle samp_tim_hdl = NULL;
 static GPTimerCC26XX_Value load_val[2] = {LOW_STATE_TIME, HIGH_STATE_TIME};
+
+volatile static debug_timer = 47999;
 /* Timer variables END***************************************************/
 
 /* Debug measure variables START***************************************************/
@@ -68,10 +71,15 @@ static GPTimerCC26XX_Value timestamp_decode_dif    = 0;
 static uint32_t counter_packet_send                = 0;
 static uint32_t counter_adc_data_read              = 0;
 static uint32_t save_counter_packet_send           = 0;
+static uint32_t i2s_buffer_error_1                   = 0;
+static uint32_t i2s_buffer_error_2                   = 0;
 static float packet_lost_percentage                = 0;
 static uint32_t error_counter_packet_send          = 0;
 static uint32_t skip_counter_packet_send           = 0;
 static uint32_t resend_error_counter_packet_send   = 0;
+static GPTimerCC26XX_Value timestamp_TOTAL_start;
+static GPTimerCC26XX_Value timestamp_TOTAL_stop;
+static GPTimerCC26XX_Value timestamp_TOTAL_dif;
 /* Debug measure variables END***************************************************/
 
 /***********LPF START****************************************************/
@@ -210,8 +218,10 @@ static bool gotBufferInOut = FALSE;
 /*************** I2S variables END ***************************************************/
 
 /******** codec START ***************************************************/
-static ima_state ima_Encode_state;
-static ima_state ima_Decode_state;
+//static ima_state ima_Encode_state;
+//static ima_state ima_Decode_state;
+
+static struct ADPCMstate encoder_adpcm, decoder_adpcm;
 /******** codec END ***************************************************/
 
 /******** extern variables START ***************************************************/
@@ -296,6 +306,8 @@ void start_voice_handle(void)
 {
     /* init debug variables and counters*/
     skip_counter_packet_send = 0;
+    i2s_buffer_error_1 = 0;
+    i2s_buffer_error_2 = 0;
     resend_error_counter_packet_send = 0;
     error_counter_packet_send = 0;
     counter_packet_send = 0;
@@ -580,6 +592,7 @@ void USER_task_Handler (pzMsg_t *pMsg)
             break;
         case PZ_SEND_PACKET_EVT:
         {
+            timestamp_TOTAL_start = GPTimerCC26XX_getValue(measure_tim_hdl);
             mailpost_usage = Mailbox_getNumPendingMsgs(mailbox);
             if(mailpost_usage>0)
             {
@@ -590,12 +603,15 @@ void USER_task_Handler (pzMsg_t *pMsg)
                 Mailbox_pend(mailbox, packet_data, BIOS_NO_WAIT);
 
                 timestamp_decode_start =  GPTimerCC26XX_getValue(measure_tim_hdl);
-                decrypt_packet(packet_data);
-                int16_t temp_current = packet_data[V_STREAM_OUTPUT_SOUND_LEN + 1] | packet_data[V_STREAM_OUTPUT_SOUND_LEN] << 8;
+                //decrypt_packet(packet_data);
+                decoder_adpcm.prevsample = ((int16_t)(packet_data[V_STREAM_OUTPUT_SOUND_LEN]) << 8) |
+                        (int16_t)(packet_data[V_STREAM_OUTPUT_SOUND_LEN + 1]);
 
-                ima_Decode_state.current = (int32_t)temp_current;
-                ima_Decode_state.stepindex = packet_data[V_STREAM_OUTPUT_SOUND_LEN + 2];
-                ima_decode_mono(&ima_Decode_state, raw_data_received, packet_data, FRAME_SIZE);
+                decoder_adpcm.previndex = ((int32_t)(packet_data[V_STREAM_OUTPUT_SOUND_LEN + 2]));
+                ADPCMDecoderBuf2((char*)(packet_data), raw_data_received, &decoder_adpcm);
+                ADPCMDecoderBuf2((char*)(&packet_data[FRAME_SIZE / 4]), &raw_data_received[I2S_SAMP_PER_FRAME / 4], &decoder_adpcm);
+                ADPCMDecoderBuf2((char*)(&packet_data[FRAME_SIZE / 2]), &raw_data_received[I2S_SAMP_PER_FRAME / 2], &decoder_adpcm);
+                ADPCMDecoderBuf2((char*)(&packet_data[FRAME_SIZE* 3 / 4]), &raw_data_received[I2S_SAMP_PER_FRAME * 3 / 4], &decoder_adpcm);
 
                 timestamp_decode_stop =  GPTimerCC26XX_getValue(measure_tim_hdl);
                 timestamp_decode_dif = timestamp_decode_stop - timestamp_decode_start;
@@ -611,7 +627,7 @@ void USER_task_Handler (pzMsg_t *pMsg)
             bufferRequest.buffersRequested = I2SCC26XX_BUFFER_IN_AND_OUT;
 
             gotBufferInOut = I2SCC26XX_requestBuffer(i2sHandle, &bufferRequest);
-            while (gotBufferInOut)
+            if (gotBufferInOut)
             {
                 memcpy(bufferRequest.bufferOut, raw_data_received, sizeof(raw_data_received) / 2 );
                 memcpy(mic_data_1ch, bufferRequest.bufferIn, sizeof(mic_data_1ch) / 2 );
@@ -623,8 +639,13 @@ void USER_task_Handler (pzMsg_t *pMsg)
                 i2c_read_delay++;
 
                 bufferRequest.buffersRequested = I2SCC26XX_BUFFER_IN_AND_OUT;
+//                while(debug_timer>0)
+//                {
+//                    debug_timer--;
+//                }
+//                debug_timer = 47999;
                 gotBufferInOut = I2SCC26XX_requestBuffer(i2sHandle, &bufferRequest);
-                while (gotBufferInOut)
+                if (gotBufferInOut)
                 {
                     memcpy(bufferRequest.bufferOut, &raw_data_received[160], sizeof(raw_data_received) / 2 );
                     memcpy(&mic_data_1ch[160], bufferRequest.bufferIn, sizeof(mic_data_1ch) / 2);
@@ -688,21 +709,24 @@ void USER_task_Handler (pzMsg_t *pMsg)
                     timestamp_encode_start =  GPTimerCC26XX_getValue(measure_tim_hdl);
 
 
-                    send_array[V_STREAM_OUTPUT_SOUND_LEN] =     (uint8_t)(ima_Encode_state.current >> 8);
-                    send_array[V_STREAM_OUTPUT_SOUND_LEN + 1] = (uint8_t)(ima_Encode_state.current & 0xFF);
-                    send_array[V_STREAM_OUTPUT_SOUND_LEN + 2] = (uint8_t)ima_Encode_state.stepindex;
-                    ima_encode_mono(&ima_Encode_state, send_array, mic_data_1ch, sizeof(mic_data_1ch));
-
-
+                    send_array[V_STREAM_OUTPUT_SOUND_LEN] = (uint8_t)(encoder_adpcm.prevsample >> 8);
+                    send_array[V_STREAM_OUTPUT_SOUND_LEN + 1] = (uint8_t)encoder_adpcm.prevsample;
+                    send_array[V_STREAM_OUTPUT_SOUND_LEN + 2] = (uint8_t)encoder_adpcm.previndex;
                     send_array[TRANSMIT_DATA_LENGTH - 4] = (uint8_t)(counter_packet_send >> 24);
                     send_array[TRANSMIT_DATA_LENGTH - 3] = (uint8_t)(counter_packet_send >> 16);
                     send_array[TRANSMIT_DATA_LENGTH - 2] = (uint8_t)(counter_packet_send >> 8);
                     send_array[TRANSMIT_DATA_LENGTH - 1] = (uint8_t)(counter_packet_send);
 
+                    ADPCMEncoderBuf2(mic_data_1ch, (char*)(send_array), &encoder_adpcm);
+                    ADPCMEncoderBuf2(&mic_data_1ch[I2S_SAMP_PER_FRAME / 4], (char*)(&send_array[FRAME_SIZE/4]), &encoder_adpcm);
+                    ADPCMEncoderBuf2(&mic_data_1ch[I2S_SAMP_PER_FRAME / 2], (char*)(&send_array[FRAME_SIZE/2]), &encoder_adpcm);
+                    ADPCMEncoderBuf2(&mic_data_1ch[I2S_SAMP_PER_FRAME * 3 / 4], (char*)(&send_array[FRAME_SIZE * 3 / 4]), &encoder_adpcm);
+
+
                     timestamp_encode_stop =  GPTimerCC26XX_getValue(measure_tim_hdl);
                     timestamp_encode_dif = timestamp_encode_stop - timestamp_encode_start;
 
-                    encrypt_packet(send_array);
+                    //encrypt_packet(send_array);
                     send_status = DataService_SetParameter(DS_STREAM_OUTPUT_ID, DS_STREAM_OUTPUT_LEN, send_array);
                     if((send_status != SUCCESS)/* || (send_status == 0x15)*/) /* 0x15 bleNoResources*/
                     {
@@ -723,7 +747,16 @@ void USER_task_Handler (pzMsg_t *pMsg)
 #endif
                     }
                 }
+                else
+                {
+                    i2s_buffer_error_2++;
+                }
             }
+            else
+            {
+                i2s_buffer_error_1++;
+            }
+
             if(enable_UART_DEBUG)
             {
                 memcpy(&uart_data_send[1],                            mic_data_1ch,      sizeof(mic_data_1ch));
@@ -742,6 +775,8 @@ void USER_task_Handler (pzMsg_t *pMsg)
 
                 UART_write(uart, uart_data_send, sizeof(uart_data_send));
             }
+            timestamp_TOTAL_stop = GPTimerCC26XX_getValue(measure_tim_hdl);
+            timestamp_TOTAL_dif = timestamp_TOTAL_stop - timestamp_TOTAL_start;
         }
         break;
 
