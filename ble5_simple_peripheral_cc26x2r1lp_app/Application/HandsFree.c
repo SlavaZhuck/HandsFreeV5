@@ -200,8 +200,8 @@ static uint16_t i2sSampleBuffer[I2S_SAMPLE_MEMORY_SZ];
 
 static I2SCC26XX_Params i2sParams =
 {
-    .requestMode            = I2SCC26XX_CALLBACK_MODE,
-    .ui32requestTimeout     = BIOS_WAIT_FOREVER,
+    .requestMode            = I2SCC26XX_MODE_BLOCKING,
+    .ui32requestTimeout     = 1000,//BIOS_NO_WAIT,
     .callbackFxn            = bufRdy_callback,
     .blockSize              = FRAME_SIZE,//I2S_SAMP_PER_FRAME,
     .pvContBuffer           = (void *)i2sSampleBuffer,
@@ -698,7 +698,6 @@ void USER_task_Handler (pzMsg_t *pMsg)
             }else{
                 memset ( packet_data,   0xA5, sizeof(packet_data) );
                 memset ( raw_data_received, 0xA5A5, sizeof(raw_data_received));
-                memset ( mic_data_1ch,  0xA5A5, sizeof(mic_data_1ch));
             }
 
             bufferRequest.buffersRequested = I2SCC26XX_BUFFER_IN_AND_OUT;
