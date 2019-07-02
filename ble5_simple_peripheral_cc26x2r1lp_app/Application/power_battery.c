@@ -9,6 +9,9 @@
 #include "max9860_i2c.h"
 #include <ti/drivers/ADCBuf.h>
 #include "driverlib/aon_batmon.h"
+#include <ti/sysbios/knl/Clock.h>
+#include <ti/sysbios/knl/Task.h>
+#include <stdbool.h>
 
 
 static Clock_Struct ADC_ChannelSwitchClock;

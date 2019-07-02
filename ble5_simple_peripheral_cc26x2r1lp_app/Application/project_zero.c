@@ -825,7 +825,7 @@ static void ProjectZero_processGapMessage(gapEventHdr_t *pMsg)
 
         if(pPkt->hdr.status == SUCCESS)
         {
-            ProjectZero_enqueueMsg(PZ_SEND_STOP_STREAM_EVT, NULL);
+            ProjectZero_enqueueMsg(PZ_STOP_STREAM_EVT, NULL);
             //stop_voice_handle();
             // Add connection to list
             ProjectZero_addConn(pPkt->connectionHandle);
@@ -858,7 +858,7 @@ static void ProjectZero_processGapMessage(gapEventHdr_t *pMsg)
         if(stream_on == 1)
         {
             //GAPRole_SendUpdateParam(8, 8, 0, TIMEOUT, GAPROLE_RESEND_PARAM_UPDATE);
-            ProjectZero_enqueueMsg(PZ_SEND_STOP_STREAM_EVT, NULL);
+            ProjectZero_enqueueMsg(PZ_STOP_STREAM_EVT, NULL);
         }
 
         //stop_voice_handle();

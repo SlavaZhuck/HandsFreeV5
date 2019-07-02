@@ -117,32 +117,36 @@ extern "C"
 
 // Types of messages that can be sent to the user application task from other
 // tasks or interrupts. Note: Messages from BLE Stack are sent differently.
-#define PZ_SERVICE_WRITE_EVT     0  /* A characteristic value has been written     */
-#define PZ_SERVICE_CFG_EVT       1  /* A characteristic configuration has changed  */
-#define PZ_UPDATE_CHARVAL_EVT    2  /* Request from ourselves to update a value    */
-#define PZ_BUTTON_DEBOUNCED_EVT  3  /* A button has been debounced with new value  */
-#define PZ_PAIRSTATE_EVT         4  /* The pairing state is updated                */
-#define PZ_PASSCODE_EVT          5  /* A pass-code/PIN is requested during pairing */
-#define PZ_ADV_EVT               6  /* A subscribed advertisement activity         */
-#define PZ_START_ADV_EVT         7  /* Request advertisement start from task ctx   */
-#define PZ_SEND_PARAM_UPD_EVT    8  /* Request parameter update req be sent        */
-#define PZ_CONN_EVT              9  /* Connection Event End notice                 */
-#define PZ_SEND_PACKET_EVT       10  /* Connection Event End notice                 */
-#define PZ_SEND_START_STREAM_EVT 11  /* Connection Event End notice                 */
-#define PZ_SEND_STOP_STREAM_EVT  12  /* Connection Event End notice                 */
-#define PZ_I2C_Read_status_EVT   13  /* Connection Event End notice                 */
-#define PZ_APP_MSG_Read_ADC_Battery_Voltage   14  /* Connection Event End notice                 */
-#define PZ_APP_MSG_Read_ADC_Power_Button_Voltage   15  /* Connection Event End notice                 */
-#define PZ_APP_MSG_Load_vol      16  /* Connection Event End notice                 */
-#define PZ_APP_MSG_Write_vol     17  /* Connection Event End notice                 */
+#define PZ_SERVICE_WRITE_EVT                        0  /* A characteristic value has been written     */
+#define PZ_SERVICE_CFG_EVT                          1  /* A characteristic configuration has changed  */
+#define PZ_UPDATE_CHARVAL_EVT                       2  /* Request from ourselves to update a value    */
+#define PZ_BUTTON_DEBOUNCED_EVT                     3  /* A button has been debounced with new value  */
+#define PZ_PAIRSTATE_EVT                            4  /* The pairing state is updated                */
+#define PZ_PASSCODE_EVT                             5  /* A pass-code/PIN is requested during pairing */
+#define PZ_ADV_EVT                                  6  /* A subscribed advertisement activity         */
+#define PZ_START_ADV_EVT                            7  /* Request advertisement start from task ctx   */
+#define PZ_SEND_PARAM_UPD_EVT                       8  /* Request parameter update req be sent        */
+#define PZ_CONN_EVT                                 9  /* Connection Event End notice                 */
+#define PZ_GET_FIRST_SOUND_FRAME                    11  /* Connection Event End notice                 */
+#define PZ_GET_SECOND_SOUND_FRAME_SEND_PACKET_EVT   12  /* Connection Event End notice                 */
+#define PZ_START_STREAM_EVT                         13  /* Connection Event End notice                 */
+#define PZ_STOP_STREAM_EVT                          14  /* Connection Event End notice                 */
+#define PZ_I2C_Read_status_EVT                      15  /* Connection Event End notice                 */
+#define PZ_APP_MSG_Read_ADC_Battery_Voltage         16  /* Connection Event End notice                 */
+#define PZ_APP_MSG_Read_ADC_Power_Button_Voltage    17  /* Connection Event End notice                 */
+#define PZ_APP_MSG_Load_vol                         18  /* Connection Event End notice                 */
+#define PZ_APP_MSG_Write_vol                        19  /* Connection Event End notice                 */
+
+
+#define PZ_APP_MSG_Read_ADC_Battery_Voltage_UART    20  /* Connection Event End notice                 */
+#define PZ_APP_MSG_Read_key                         21  /* Connection Event End notice                 */
+#define PZ_APP_MSG_Write_key                        22  /* Connection Event End notice                 */
+#define PZ_APP_MSG_Resend_Packet                    23  /* Connection Event End notice                 */
+
 #ifdef LOGGING
-#define PZ_APP_MSG_Send_message_BLE     18  /* Connection Event End notice                 */
-#define PZ_APP_MSG_Send_message_Buf_Status     19  /* Connection Event End notice                 */
+#define PZ_APP_MSG_Send_message_BLE                 24  /* Connection Event End notice                 */
+#define PZ_APP_MSG_Send_message_Buf_Status          25  /* Connection Event End notice                 */
 #endif
-#define PZ_APP_MSG_Read_ADC_Battery_Voltage_UART   20  /* Connection Event End notice                 */
-#define PZ_APP_MSG_Read_key     21  /* Connection Event End notice                 */
-#define PZ_APP_MSG_Write_key     22  /* Connection Event End notice                 */
-#define PZ_APP_MSG_Resend_Packet     23  /* Connection Event End notice                 */
 
 
 // General discoverable mode: advertise indefinitely

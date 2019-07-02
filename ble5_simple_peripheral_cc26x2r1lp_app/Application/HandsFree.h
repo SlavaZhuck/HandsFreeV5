@@ -8,14 +8,9 @@
 #ifndef APPLICATION_HANDSFREE_H_
 #define APPLICATION_HANDSFREE_H_
 
-#include "project_zero.h"
-#include "./services/data_service.h"
-#include "max9860_i2c.h"
-#include <ti/drivers/timer/GPTimerCC26XX.h>
-#include <ti/drivers/AESCBC.h>
-#include <ti/drivers/cryptoutils/cryptokey/CryptoKeyPlaintext.h>
-#include <ti/sysbios/BIOS.h>
+
 #include <GeneralDef.h>
+#include <stdint.h>
 
 
 #define TRANSMIT_DATA_LENGTH              167u  /* size of 1 BLE packet*/
@@ -35,8 +30,9 @@
 #define V_STREAM_OUTPUT_SOUND_LEN         (TRANSMIT_DATA_LENGTH - PACKET_CODEC_META_DATA - PACKET_PACKET_NUMBER_LENGHT ) /* size of sound data */
 
 
-#define MAILBOX_DEPTH       30                  /* size of BLE receiving FIFO */
-#define RESEND_DELAY        (SAMP_PERIOD/2.0f)  /* if BLE packet wasn't sent - after this time new attemp will be made */
+#define MAILBOX_DEPTH                30                  /* size of BLE receiving FIFO */
+#define RESEND_DELAY                 (SAMP_PERIOD/2.0f)  /* if BLE packet wasn't sent - after this time new attemp will be made */
+#define SECOND_BUFFER_AQUIRE_DELAY   (SAMP_PERIOD/2.0f)  /* after this time would be requested next 10ms sound buffer from i2s driver */
 
 /******I2S Start ************************************************************************************/
 #define I2S_SAMP_PER_FRAME              320u    /* number of frames per one SAMP_PERIOD*/
@@ -67,8 +63,8 @@ void HandsFree_init (void);
 typedef uint8_t mac_dataType[MAC_SIZE];
 typedef uint8_t sid_dataType[SID_LENGTH];
 
-extern uint8_t read_aes_key(uint8_t *key);
-extern uint8_t write_aes_key(uint8_t *key);
+uint8_t read_aes_key(uint8_t *key);
+uint8_t write_aes_key(uint8_t *key);
 
 struct event_indicator_struct_BLE {
     uint8_t message_type;

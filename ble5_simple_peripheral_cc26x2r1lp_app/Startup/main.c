@@ -60,6 +60,8 @@
 #include "power_battery.h"
 #include "bcomdef.h"
 #include "project_zero.h"
+#include "HandsFree.h"
+
 #ifdef PTM_MODE
 #include "npi_task.h"
 #endif // PTM_MODE

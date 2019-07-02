@@ -8,7 +8,7 @@
 #ifndef APPLICATION_BUTTONS_H_
 #define APPLICATION_BUTTONS_H_
 
-
+#include "project_zero.h"
 #define BUTTON_DEBOUNCE_TIME      30 /* ms */
 
 void buttons_init (void);
