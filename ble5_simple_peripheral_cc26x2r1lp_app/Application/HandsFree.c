@@ -179,6 +179,7 @@ static Clock_Struct GetSecondSoundBuf_ChannelSwitchClock;
 static Clock_Handle GetSecondSoundBuf_ClockHandle;
 static Mailbox_Handle mailbox;
 static uint8_t mailpost_usage;
+static uint8_t resend_counter = 0;
 
 static uint8_t send_status = 0;
 static uint32_t counter_packet_received = 0;
@@ -696,8 +697,8 @@ void USER_task_Handler (pzMsg_t *pMsg)
                 previous_receive_counter = counter_packet_received;
 
             }else{
-                memset ( packet_data,   0xA5, sizeof(packet_data) );
-                memset ( raw_data_received, 0xA5A5, sizeof(raw_data_received));
+                memset ( packet_data,   0x00, sizeof(packet_data) );
+                memset ( raw_data_received, 0x00, sizeof(raw_data_received));
             }
 
             bufferRequest.buffersRequested = I2SCC26XX_BUFFER_IN_AND_OUT;
@@ -928,11 +929,14 @@ void USER_task_Handler (pzMsg_t *pMsg)
         case PZ_APP_MSG_Resend_Packet:
             if(counter_packet_send == save_counter_packet_send)
             {
+                /* increment resend counter, resend no more than 3 times (4 is max available) */
+                resend_counter++;
                 send_status = DataService_SetParameter(DS_STREAM_OUTPUT_ID, DS_STREAM_OUTPUT_LEN, send_array);
                 if((send_status != SUCCESS)/* || (send_status == 0x15)*/) /* 0x15 bleNoResources*/
                 {
+                    Util_startClock((Clock_Struct *)Resend_BLEpacket_ClockHandle);
                     error_counter_packet_send++;
-                    save_counter_packet_send = 0;
+                    //save_counter_packet_send = 0;
 #ifdef LOGGING
                     update_UART_Messages(PACKET_SENT_ERROR_TYPE);
                     ProjectZero_enqueueMsg(PZ_APP_MSG_Send_message_BLE, NULL);
@@ -941,6 +945,7 @@ void USER_task_Handler (pzMsg_t *pMsg)
                 }
                 else
                 {
+                    resend_counter = 0;
                     counter_packet_send++;
 #ifdef LOGGING
                     update_UART_Messages(PACKET_SENT_MESSAGE_TYPE);
@@ -952,6 +957,7 @@ void USER_task_Handler (pzMsg_t *pMsg)
             else
             {
                 skip_counter_packet_send++;
+                resend_counter = 0;
 #ifdef LOGGING
                 update_UART_Messages(PACKET_SENT_ERROR_TYPE);
                 ProjectZero_enqueueMsg(PZ_APP_MSG_Send_message_BLE, NULL);
@@ -969,7 +975,10 @@ void USER_task_Handler (pzMsg_t *pMsg)
 
 static void Resend_BLEpacket_SwiFxn(UArg temp)
 {
-    ProjectZero_enqueueMsg(PZ_APP_MSG_Resend_Packet, NULL);
+    if(resend_counter <3)
+    {
+        ProjectZero_enqueueMsg(PZ_APP_MSG_Resend_Packet, NULL);
+    }
 }
 
 static void GetSecondSoundBuf_SwiFxn(UArg temp)

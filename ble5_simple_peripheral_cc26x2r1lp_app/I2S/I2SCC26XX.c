@@ -207,7 +207,7 @@ I2SCC26XX_Handle I2SCC26XX_open(I2SCC26XX_Handle handle, I2SCC26XX_Params *param
     object->currentStream->status       = I2SCC26XX_STREAM_IDLE;
 
     /* The following are constants that apply to I2S */
-    object->i32SampleRate = -1;//I2S_SAMPLE_RATE_16K;//0;//I2S_SAMPLE_RATE_16K;                         /* If negative then use user configured clock division */
+    object->i32SampleRate = I2S_SAMPLE_RATE_16K;//-1;//I2S_SAMPLE_RATE_16K;//0;//I2S_SAMPLE_RATE_16K;                         /* If negative then use user configured clock division */
     object->audioClkCfg.wclkDiv = 16;  //16                                  /* I2S Word Clock divider override*/
     object->audioClkCfg.sampleOnPositiveEdge = I2SCC26XX_SampleEdge_Postive; /* I2S Sample Edge */
     object->audioClkCfg.wclkPhase = I2SCC26XX_WordClockPhase_Dual;           /* I2S Word Clock Phase */

@@ -31,7 +31,7 @@
 
 
 #define MAILBOX_DEPTH                30                  /* size of BLE receiving FIFO */
-#define RESEND_DELAY                 (SAMP_PERIOD/2.0f)  /* if BLE packet wasn't sent - after this time new attemp will be made */
+#define RESEND_DELAY                 (SAMP_PERIOD/4.0f)  /* if BLE packet wasn't sent - after this time new attemp will be made */
 #define SECOND_BUFFER_AQUIRE_DELAY   (SAMP_PERIOD/2.0f)  /* after this time would be requested next 10ms sound buffer from i2s driver */
 
 /******I2S Start ************************************************************************************/
