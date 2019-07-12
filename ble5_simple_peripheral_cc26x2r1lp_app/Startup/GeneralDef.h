@@ -8,8 +8,8 @@
 #ifndef STARTUP_GENERALDEF_H_
 #define STARTUP_GENERALDEF_H_
 
-#define UART_DEBUG
-//#define LPF
 #define LOGGING
+//#define DEBUG_SINUS
+//#define DEBUG_LOGGING
 
 #endif /* STARTUP_GENERALDEF_H_ */

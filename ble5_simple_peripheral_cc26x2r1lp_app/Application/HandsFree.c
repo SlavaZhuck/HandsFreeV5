@@ -34,6 +34,7 @@
 #include <ti/drivers/AESCBC.h>
 #include <ti/drivers/cryptoutils/cryptokey/CryptoKeyPlaintext.h>
 #include <ti/sysbios/BIOS.h>
+#include <math.h>
 
 #ifdef  LOGGING
     #define BASE64_SIZE(x)  (((x)+2) / 3 * 4 + 1)
@@ -71,23 +72,23 @@ static GPTimerCC26XX_Value load_val[2] = {LOW_STATE_TIME, HIGH_STATE_TIME};
 /* Debug measure variables START***************************************************/
 static GPTimerCC26XX_Value timestamp_encode_start  = 0;
 static GPTimerCC26XX_Value timestamp_encode_stop   = 0;
-static GPTimerCC26XX_Value timestamp_encode_dif    = 0;
+volatile static GPTimerCC26XX_Value timestamp_encode_dif    = 0;
 static GPTimerCC26XX_Value timestamp_decode_start  = 0;
 static GPTimerCC26XX_Value timestamp_decode_stop   = 0;
-static GPTimerCC26XX_Value timestamp_decode_dif    = 0;
+volatile static GPTimerCC26XX_Value timestamp_decode_dif    = 0;
 
-static uint32_t counter_packet_send                = 0;
-static uint32_t counter_adc_data_read              = 0;
-static uint32_t save_counter_packet_send           = 0;
-static uint32_t i2s_buffer_error_1                 = 0;
-static uint32_t i2s_buffer_error_2                 = 0;
-static float packet_lost_percentage                = 0;
-static uint32_t error_counter_packet_send          = 0;
-static uint32_t skip_counter_packet_send           = 0;
-static uint32_t resend_error_counter_packet_send   = 0;
+volatile static uint32_t counter_packet_send                = 0;
+volatile static uint32_t counter_adc_data_read              = 0;
+volatile static uint32_t save_counter_packet_send           = 0;
+volatile static uint32_t i2s_buffer_error_1                 = 0;
+volatile static uint32_t i2s_buffer_error_2                 = 0;
+volatile static float packet_lost_percentage                = 0;
+volatile static uint32_t error_counter_packet_send          = 0;
+volatile static uint32_t skip_counter_packet_send           = 0;
+volatile static uint32_t resend_error_counter_packet_send   = 0;
 static GPTimerCC26XX_Value timestamp_TOTAL_start;
 static GPTimerCC26XX_Value timestamp_TOTAL_stop;
-static GPTimerCC26XX_Value timestamp_TOTAL_dif;
+volatile static GPTimerCC26XX_Value timestamp_TOTAL_dif;
 /* Debug measure variables END***************************************************/
 
 /***********LPF START****************************************************/
@@ -214,6 +215,7 @@ static I2SCC26XX_Params i2sParams =
 
 static int16_t raw_data_received[I2S_SAMP_PER_FRAME];
 static int16_t mic_data_1ch[I2S_SAMP_PER_FRAME];
+static int16_t sinus[I2S_SAMP_PER_FRAME];
 //int16_t raw_mic_data[I2S_SAMP_PER_FRAME];
 
 static bool gotBufferInOut = FALSE;
@@ -238,6 +240,55 @@ extern bool enable_blink;
 extern PIN_Handle ledPinHandle;
 /******** extern variables END ***************************************************/
 
+#ifdef DEBUG_SINUS
+
+#define M_PI        (3.14159265358979323846)
+#define M_PI2  (2 * M_PI)
+
+static float freq = 10.0f, phase = 0.0f, amplitude = 1024.0f;
+static float local_phase = 0;
+static float time = 0;
+static GPTimerCC26XX_Value timestamp_sinus_debug_start;
+static GPTimerCC26XX_Value timestamp_sinus_debug_stop;
+static GPTimerCC26XX_Value timestamp_sinus_debug_dif;
+
+
+
+void inline sinus_debug (void)
+{
+    timestamp_sinus_debug_start = GPTimerCC26XX_getValue(measure_tim_hdl);
+
+    for (uint16_t sample = 0; sample < I2S_SAMP_PER_FRAME; sample++)
+    {
+        local_phase =   (M_PI / 180.0f * ((float)sample) * freq * 0.02265) + (phase * M_PI / 180.0f);
+
+        while(local_phase >= M_PI2 )
+        {
+            local_phase -= M_PI2;
+        }
+        raw_data_received[sample] = (int16_t)(amplitude * sinf(local_phase));
+
+
+        if(sample ==  I2S_SAMP_PER_FRAME - 1)
+        {
+//            local_phase =   (M_PI / 180.0f * (sample + 2 ) * freq) + (phase * M_PI / 180.0f);
+            phase = local_phase * 180.0f / M_PI;
+            while(phase >= 360 )
+            {
+                phase -= 360;
+            }
+        }
+
+    }
+    freq += 10;
+    if(freq >= 7000)
+    {
+        freq = 1;
+    }
+    timestamp_sinus_debug_stop = GPTimerCC26XX_getValue(measure_tim_hdl);
+    timestamp_sinus_debug_dif = timestamp_sinus_debug_stop-timestamp_sinus_debug_start;
+}
+#endif
 
 #ifdef LOGGING
 char *base64_encode(char *out, int out_size, const uint8_t *in, int in_size)
@@ -378,6 +429,10 @@ static void EC_partial_processing ( uint16_t start_index, uint16_t stop_index, b
 void start_voice_handle(void)
 {
     /* init debug variables and counters*/
+#ifdef DEBUG_SINUS
+    time = 0;
+#endif
+
     skip_counter_packet_send = 0;
     i2s_buffer_error_1 = 0;
     i2s_buffer_error_2 = 0;
@@ -409,6 +464,21 @@ void stop_voice_handle(void)
     GPTimerCC26XX_stop(samp_tim_hdl);
     GPTimerCC26XX_stop(measure_tim_hdl);
     max9860_I2C_Shutdown_state(1);//enable shutdown_mode
+    gotBufferInOut = FALSE ;
+
+    /* release all rest sound buffer before stopping stream */
+    bufferRequest.buffersRequested = I2SCC26XX_BUFFER_IN_AND_OUT;
+    gotBufferInOut = I2SCC26XX_requestBuffer(i2sHandle, &bufferRequest);
+    while (gotBufferInOut)
+    {
+        bufferRelease.bufferHandleOut = bufferRequest.bufferHandleOut;
+        bufferRelease.bufferHandleIn = bufferRequest.bufferHandleIn;
+        I2SCC26XX_releaseBuffer(i2sHandle, &bufferRelease);
+        bufferRequest.buffersRequested = I2SCC26XX_BUFFER_IN_AND_OUT;
+        gotBufferInOut = I2SCC26XX_requestBuffer(i2sHandle, &bufferRequest);
+    }
+
+    /* stop I2S stream */
     if(stream_on)
     {
         if(!I2SCC26XX_stopStream(i2sHandle))
@@ -569,6 +639,11 @@ void HandsFree_init (void)
     HCI_EXT_HaltDuringRfCmd( HCI_EXT_HALT_DURING_RF_DISABLE ); //Enable CPU during RF events (scan included) - may increase power consumption
     HCI_EXT_ClkDivOnHaltCmd( HCI_EXT_DISABLE_CLK_DIVIDE_ON_HALT ); //Set whether the system clock will be divided when the MCU is halted. - may increase power consumption
     HCI_EXT_SetFastTxResponseTimeCmd(HCI_EXT_ENABLE_FAST_TX_RESP_TIME); // configure the Link Layer fast transmit response time feature
+
+#ifdef DEBUG_LOGGING
+    start_voice_handle();
+#endif
+
 }
 
 
@@ -630,6 +705,23 @@ void samp_timer_callback(GPTimerCC26XX_Handle handle, GPTimerCC26XX_IntMask inte
     {
         ProjectZero_enqueueMsg(PZ_GET_FIRST_SOUND_FRAME, NULL);
     }
+#ifdef DEBUG_LOGGING
+    update_UART_Messages(PACKET_SENT_MESSAGE_TYPE);
+    ProjectZero_enqueueMsg(PZ_APP_MSG_Send_message_BLE, NULL);
+    ProjectZero_enqueueMsg(PZ_APP_MSG_Send_message_Buf_Status, NULL);
+
+    update_UART_Messages(PACKET_SENT_MESSAGE_TYPE);
+    ProjectZero_enqueueMsg(PZ_APP_MSG_Send_message_BLE, NULL);
+    ProjectZero_enqueueMsg(PZ_APP_MSG_Send_message_Buf_Status, NULL);
+
+    update_UART_Messages(PACKET_SENT_ERROR_TYPE);
+    ProjectZero_enqueueMsg(PZ_APP_MSG_Send_message_BLE, NULL);
+    ProjectZero_enqueueMsg(PZ_APP_MSG_Send_message_Buf_Status, NULL);
+
+    update_UART_Messages(PACKET_RECEIVED_MESSAGE_TYPE);
+    ProjectZero_enqueueMsg(PZ_APP_MSG_Send_message_BLE, NULL);
+    ProjectZero_enqueueMsg(PZ_APP_MSG_Send_message_Buf_Status, NULL);
+#endif
 }
 
 void USER_task_Handler (pzMsg_t *pMsg)
@@ -698,11 +790,17 @@ void USER_task_Handler (pzMsg_t *pMsg)
 
             }else{
                 memset ( packet_data,   0x00, sizeof(packet_data) );
-                memset ( raw_data_received, 0x00, sizeof(raw_data_received));
+//                memset ( raw_data_received, 0x00, sizeof(raw_data_received));
             }
 
             bufferRequest.buffersRequested = I2SCC26XX_BUFFER_IN_AND_OUT;
             gotBufferInOut = I2SCC26XX_requestBuffer(i2sHandle, &bufferRequest);
+
+#ifdef DEBUG_SINUS
+            sinus_debug();
+//            memcpy(raw_data_received, sinus, sizeof(raw_data_received));
+#endif
+
             if (gotBufferInOut)
             {
                 memcpy(bufferRequest.bufferOut, raw_data_received, sizeof(raw_data_received) / 2 );
@@ -793,6 +891,7 @@ void USER_task_Handler (pzMsg_t *pMsg)
             else
             {
                 counter_packet_send++;
+                resend_counter = 0;
 #ifdef LOGGING
                 update_UART_Messages(PACKET_SENT_MESSAGE_TYPE);
 
@@ -804,9 +903,9 @@ void USER_task_Handler (pzMsg_t *pMsg)
             if(enable_UART_DEBUG)
             {
                 memcpy(&uart_data_send[1],                            mic_data_1ch,      sizeof(mic_data_1ch));
-                memcpy(&uart_data_send[I2S_SAMP_PER_FRAME + 1],       raw_data_received,     sizeof(raw_data_received));
-                memcpy(&uart_data_send[I2S_SAMP_PER_FRAME + 1],       raw_data_received,     sizeof(raw_data_received));
-                 //memcpy(&uart_data_send[I2S_SAMP_PER_FRAME * 2 + 1], raw_data_received, sizeof(raw_data_received));
+
+                memcpy(&uart_data_send[I2S_SAMP_PER_FRAME*1 + 1],       raw_data_received,     sizeof(raw_data_received));
+
                 uart_data_send[0]= (40u << 8u) + 41u;   //start bytes for MATLAB ")("
                 uart_data_send[I2S_SAMP_PER_FRAME*2 + 1] = counter_packet_send >>16;
 
@@ -881,7 +980,7 @@ void USER_task_Handler (pzMsg_t *pMsg)
             adc_conversion.adcChannel = ADC_POWER_BUTTON_PIN;
             if (ADCBuf_convert(adc_hdl, &adc_conversion, 1) != ADCBuf_STATUS_SUCCESS)
             {
-                while(1);
+//                while(1);
             }
         }
         break;
