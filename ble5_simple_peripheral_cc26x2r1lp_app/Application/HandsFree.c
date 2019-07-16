@@ -152,8 +152,8 @@ bool enable_UART_DEBUG = false;
     static uint8_t received_SID[SID_LENGTH] = {0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19};
     struct event_indicator_struct_BUF_status event_BUF_status_message;
     struct event_indicator_struct_BLE event_BLE_message;
-    uint8_t BUF_status_message_UART_buffer[BASE64_SIZE(sizeof(event_BUF_status_message)) + 1];
-    uint8_t BLE_message_UART_buffer[BASE64_SIZE(sizeof(event_BLE_message)) + 1];
+    uint8_t BUF_status_message_UART_buffer[BASE64_SIZE(sizeof(event_BUF_status_message))];
+    uint8_t BLE_message_UART_buffer[BASE64_SIZE(sizeof(event_BLE_message))];
     uint8_t ascii_buffer_UART_send[sizeof(BUF_status_message_UART_buffer) + 10];
     int32_t ascii_buffer_index = 0;
     static void update_UART_Messages (uint8_t message_type);
@@ -202,8 +202,8 @@ static uint16_t i2sSampleBuffer[I2S_SAMPLE_MEMORY_SZ];
 
 static I2SCC26XX_Params i2sParams =
 {
-    .requestMode            = I2SCC26XX_MODE_BLOCKING,
-    .ui32requestTimeout     = 1000,//BIOS_NO_WAIT,
+    .requestMode            = I2SCC26XX_CALLBACK_MODE,
+    .ui32requestTimeout     = BIOS_NO_WAIT,//BIOS_NO_WAIT,
     .callbackFxn            = bufRdy_callback,
     .blockSize              = FRAME_SIZE,//I2S_SAMP_PER_FRAME,
     .pvContBuffer           = (void *)i2sSampleBuffer,
@@ -575,8 +575,12 @@ void HandsFree_init (void)
     uartParams.writeDataMode    = UART_DATA_BINARY;
     uartParams.readDataMode     = UART_DATA_BINARY;
     uartParams.readMode         = UART_MODE_CALLBACK;
+
     uartParams.writeMode        = UART_MODE_CALLBACK;
-    //uartParams.writeTimeout      = 0; //UART_WAIT_FOREVER
+#ifdef DEBUG_LOGGING
+    uartParams.writeMode        = UART_MODE_BLOCKING;
+    uartParams.writeTimeout      = UART_WAIT_FOREVER; //UART_WAIT_FOREVER
+#endif
     uartParams.readCallback     = readCallback;
     uartParams.writeCallback    = writeCallback;
     uartParams.readReturnMode   = UART_RETURN_FULL;
@@ -641,7 +645,10 @@ void HandsFree_init (void)
     HCI_EXT_SetFastTxResponseTimeCmd(HCI_EXT_ENABLE_FAST_TX_RESP_TIME); // configure the Link Layer fast transmit response time feature
 
 #ifdef DEBUG_LOGGING
-    start_voice_handle();
+   // start_voice_handle();
+    GPTimerCC26XX_setLoadValue(samp_tim_hdl, (GPTimerCC26XX_Value)SAMP_TIME);
+    GPTimerCC26XX_start(samp_tim_hdl);
+    GPTimerCC26XX_start(measure_tim_hdl);
 #endif
 
 }
@@ -706,21 +713,15 @@ void samp_timer_callback(GPTimerCC26XX_Handle handle, GPTimerCC26XX_IntMask inte
         ProjectZero_enqueueMsg(PZ_GET_FIRST_SOUND_FRAME, NULL);
     }
 #ifdef DEBUG_LOGGING
+    counter_packet_received++;
+    update_UART_Messages(PACKET_SENT_MESSAGE_TYPE);
+    ProjectZero_enqueueMsg(PZ_APP_MSG_Send_message_BLE, NULL);
+    ProjectZero_enqueueMsg(PZ_APP_MSG_Send_message_Buf_Status, NULL);
+    counter_packet_received++;
     update_UART_Messages(PACKET_SENT_MESSAGE_TYPE);
     ProjectZero_enqueueMsg(PZ_APP_MSG_Send_message_BLE, NULL);
     ProjectZero_enqueueMsg(PZ_APP_MSG_Send_message_Buf_Status, NULL);
 
-    update_UART_Messages(PACKET_SENT_MESSAGE_TYPE);
-    ProjectZero_enqueueMsg(PZ_APP_MSG_Send_message_BLE, NULL);
-    ProjectZero_enqueueMsg(PZ_APP_MSG_Send_message_Buf_Status, NULL);
-
-    update_UART_Messages(PACKET_SENT_ERROR_TYPE);
-    ProjectZero_enqueueMsg(PZ_APP_MSG_Send_message_BLE, NULL);
-    ProjectZero_enqueueMsg(PZ_APP_MSG_Send_message_Buf_Status, NULL);
-
-    update_UART_Messages(PACKET_RECEIVED_MESSAGE_TYPE);
-    ProjectZero_enqueueMsg(PZ_APP_MSG_Send_message_BLE, NULL);
-    ProjectZero_enqueueMsg(PZ_APP_MSG_Send_message_Buf_Status, NULL);
 #endif
 }
 
@@ -1003,7 +1004,7 @@ void USER_task_Handler (pzMsg_t *pMsg)
 #ifdef LOGGING
         case PZ_APP_MSG_Send_message_BLE:
         {
-            base64_encode((char *)BLE_message_UART_buffer, (int32_t)(sizeof(BLE_message_UART_buffer) -1), (const uint8_t *)&event_BLE_message, sizeof(event_BLE_message));
+            base64_encode((char *)BLE_message_UART_buffer, (int32_t)(sizeof(BLE_message_UART_buffer)), (const uint8_t *)&event_BLE_message, sizeof(event_BLE_message));
             BLE_message_UART_buffer[sizeof(BLE_message_UART_buffer) - 1] = 0x0A;
             UART_write(uart, BLE_message_UART_buffer, sizeof(BLE_message_UART_buffer));
         }
@@ -1011,7 +1012,7 @@ void USER_task_Handler (pzMsg_t *pMsg)
 
         case PZ_APP_MSG_Send_message_Buf_Status:
         {
-            base64_encode((char *)BUF_status_message_UART_buffer, (int32_t)(sizeof(BUF_status_message_UART_buffer)-1), (const uint8_t *)&event_BUF_status_message, sizeof(event_BUF_status_message));
+            base64_encode((char *)BUF_status_message_UART_buffer, (int32_t)(sizeof(BUF_status_message_UART_buffer)), (const uint8_t *)&event_BUF_status_message, sizeof(event_BUF_status_message));
             BUF_status_message_UART_buffer[sizeof(BUF_status_message_UART_buffer) - 1] = 0x0A;
             UART_write(uart, BUF_status_message_UART_buffer, sizeof(BUF_status_message_UART_buffer));
         }

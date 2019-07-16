@@ -10,6 +10,6 @@
 
 #define LOGGING
 //#define DEBUG_SINUS
-//#define DEBUG_LOGGING
+#define DEBUG_LOGGING
 
 #endif /* STARTUP_GENERALDEF_H_ */
