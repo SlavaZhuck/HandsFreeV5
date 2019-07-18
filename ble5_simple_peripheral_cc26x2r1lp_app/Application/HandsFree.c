@@ -216,6 +216,12 @@ static I2SCC26XX_Params i2sParams =
 
 static int16_t raw_data_received[I2S_SAMP_PER_FRAME];
 static int16_t mic_data_1ch[I2S_SAMP_PER_FRAME];
+
+#ifdef SECOND_MICROPHONE
+static int16_t mic_data[I2S_SAMP_PER_FRAME*2];
+static int16_t mic_data_2ch[I2S_SAMP_PER_FRAME];
+#endif
+
 static int16_t sinus[I2S_SAMP_PER_FRAME];
 //int16_t raw_mic_data[I2S_SAMP_PER_FRAME];
 
@@ -808,8 +814,17 @@ void USER_task_Handler (pzMsg_t *pMsg)
 
             if (gotBufferInOut)
             {
-                memcpy(bufferRequest.bufferOut, raw_data_received, sizeof(raw_data_received) / 2 );
+#ifdef SECOND_MICROPHONE
+                memcpy(mic_data, bufferRequest.bufferIn, sizeof(mic_data) / 2 );
+                for(uint16_t i = 0; i<I2S_SAMP_PER_FRAME/2;i++)
+                {
+                    mic_data_2ch[i] = mic_data[i*2];  //DA1
+                    mic_data_1ch[i] = mic_data[i*2+1];//DA2
+                }
+#else
                 memcpy(mic_data_1ch, bufferRequest.bufferIn, sizeof(mic_data_1ch) / 2 );
+#endif
+                memcpy(bufferRequest.bufferOut, raw_data_received, sizeof(raw_data_received) / 2 );
 
                 bufferRelease.bufferHandleOut = bufferRequest.bufferHandleOut;
                 bufferRelease.bufferHandleIn = bufferRequest.bufferHandleIn;
@@ -837,8 +852,18 @@ void USER_task_Handler (pzMsg_t *pMsg)
             gotBufferInOut = I2SCC26XX_requestBuffer(i2sHandle, &bufferRequest);
             if (gotBufferInOut)
             {
+#ifdef SECOND_MICROPHONE
+                memcpy(&mic_data[I2S_SAMP_PER_FRAME], bufferRequest.bufferIn, sizeof(mic_data) / 2 );
+                for(uint16_t i = I2S_SAMP_PER_FRAME/2; i<I2S_SAMP_PER_FRAME;i++)
+                {
+                    mic_data_2ch[i] = mic_data[i*2];  //DA1
+                    mic_data_1ch[i] = mic_data[i*2+1];//DA2
+                }
+#else
+                memcpy(&mic_data_1ch[160], bufferRequest.bufferIn, sizeof(mic_data_1ch) / 2 );
+#endif
                 memcpy(bufferRequest.bufferOut, &raw_data_received[160], sizeof(raw_data_received) / 2 );
-                memcpy(&mic_data_1ch[160], bufferRequest.bufferIn, sizeof(mic_data_1ch) / 2);
+
                 bufferRelease.bufferHandleOut = bufferRequest.bufferHandleOut;
                 bufferRelease.bufferHandleIn = bufferRequest.bufferHandleIn;
                 I2SCC26XX_releaseBuffer(i2sHandle, &bufferRelease);
@@ -909,7 +934,7 @@ void USER_task_Handler (pzMsg_t *pMsg)
             {
                 memcpy(&uart_data_send[1],                            mic_data_1ch,      sizeof(mic_data_1ch));
 
-                memcpy(&uart_data_send[I2S_SAMP_PER_FRAME*1 + 1],       raw_data_received,     sizeof(raw_data_received));
+                memcpy(&uart_data_send[I2S_SAMP_PER_FRAME*1 + 1],       mic_data_2ch,     sizeof(mic_data_2ch));
 
                 uart_data_send[0]= (40u << 8u) + 41u;   //start bytes for MATLAB ")("
                 uart_data_send[I2S_SAMP_PER_FRAME*2 + 1] = counter_packet_send >>16;

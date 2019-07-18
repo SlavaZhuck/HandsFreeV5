@@ -36,8 +36,11 @@
 
 /******I2S Start ************************************************************************************/
 #define I2S_SAMP_PER_FRAME              320u    /* number of frames per one SAMP_PERIOD*/
+#ifdef SECOND_MICROPHONE
+#define NUM_CHAN                        3u      /* number if I2S channels: 1 for read and 1 for write*/
+#else
 #define NUM_CHAN                        2u      /* number if I2S channels: 1 for read and 1 for write*/
-
+#endif
 
 #define FRAME_SIZE                      160u    /* I2S number of samples in one driver read and write operation */
 
