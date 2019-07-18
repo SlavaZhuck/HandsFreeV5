@@ -157,6 +157,7 @@ bool enable_UART_DEBUG = false;
     uint8_t ascii_buffer_UART_send[sizeof(BUF_status_message_UART_buffer) + 10];
     int32_t ascii_buffer_index = 0;
     static void update_UART_Messages (uint8_t message_type);
+    static void swap_endian (uint8_t* pointer, uint32_t size);
 #endif
 
 /* I2C variables START*****************************************************/
@@ -626,6 +627,9 @@ void HandsFree_init (void)
         event_BLE_message.MAC_addr[i] = macAddress[i];
     }
     event_BUF_status_message.message_type = RECEIVE_BUFFER_STATUS;
+    swap_endian((uint8_t*)&event_BLE_message.MAC_addr, sizeof(event_BLE_message.MAC_addr));
+    swap_endian((uint8_t*)&event_BUF_status_message.MAC_addr, sizeof(event_BUF_status_message.MAC_addr));
+
 #endif
 
     Resend_BLEpacket_ClockHandle = Util_constructClock(&Resend_BLEpacket_ChannelSwitchClock,
@@ -1007,6 +1011,7 @@ void USER_task_Handler (pzMsg_t *pMsg)
             base64_encode((char *)BLE_message_UART_buffer, (int32_t)(sizeof(BLE_message_UART_buffer)), (const uint8_t *)&event_BLE_message, sizeof(event_BLE_message));
             BLE_message_UART_buffer[sizeof(BLE_message_UART_buffer) - 1] = 0x0A;
             UART_write(uart, BLE_message_UART_buffer, sizeof(BLE_message_UART_buffer));
+//            UART_write(uart, &event_BLE_message, sizeof(event_BLE_message));
         }
         break;
 
@@ -1015,6 +1020,8 @@ void USER_task_Handler (pzMsg_t *pMsg)
             base64_encode((char *)BUF_status_message_UART_buffer, (int32_t)(sizeof(BUF_status_message_UART_buffer)), (const uint8_t *)&event_BUF_status_message, sizeof(event_BUF_status_message));
             BUF_status_message_UART_buffer[sizeof(BUF_status_message_UART_buffer) - 1] = 0x0A;
             UART_write(uart, BUF_status_message_UART_buffer, sizeof(BUF_status_message_UART_buffer));
+//            UART_write(uart, &event_BUF_status_message, sizeof(event_BUF_status_message));
+
         }
         break;
 #endif
@@ -1154,6 +1161,9 @@ void ProjectZero_DataService_ValueChangeHandler(
             event_BUF_status_message.SID[i] = received_SID[i];
             event_BLE_message.SID[i] = received_SID[i];
         }
+        swap_endian((uint8_t*)&event_BUF_status_message.SID, sizeof(event_BUF_status_message.SID));
+        swap_endian((uint8_t*)&event_BLE_message.SID, sizeof(event_BLE_message.SID));
+
 #endif
         break;
 
@@ -1186,7 +1196,29 @@ static void update_UART_Messages (uint8_t message_type)
 
     event_BUF_status_message.buff_status = Mailbox_getNumPendingMsgs(mailbox);
     event_BUF_status_message.timestamp = timestamp;
+
+    swap_endian((uint8_t*)&event_BLE_message.packet_number, sizeof(event_BLE_message.packet_number));
+    swap_endian((uint8_t*)&event_BLE_message.timestamp, sizeof(event_BLE_message.timestamp));
+
+    swap_endian((uint8_t*)&event_BUF_status_message.timestamp, sizeof(event_BUF_status_message.timestamp));
+
 }
+
+static void swap_endian (uint8_t* pointer, uint32_t size)
+{
+    uint8_t temp_array[size];
+
+    for (uint32_t x = 0; x < size; x++)
+    {
+        temp_array[x] = *(&pointer[x]);
+    }
+
+    for (uint32_t x = 0; x < size; x++) {
+        pointer[x] = temp_array[size - 1 - x];
+    }
+}
+
+
 #endif
 
 static void bufRdy_callback(I2SCC26XX_Handle handle, I2SCC26XX_StreamNotification *pStreamNotification)

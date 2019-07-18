@@ -17,6 +17,7 @@
                     <property Type="choicelist" Value="1" id="XDS110 Aux Port"/>
                 </choice>
             </property>
+            <property Type="choicelist" Value="1" id="Debug Probe Selection"/>
             <platform XML_version="1.2" id="platform_0">
                 <instance XML_version="1.2" desc="CC2642R1F_0" href="devices/cc2642r1f.xml" id="CC2642R1F_0" xml="cc2642r1f.xml" xmlpath="devices"/>
             </platform>

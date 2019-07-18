@@ -11,7 +11,8 @@
 #include <ti/drivers/I2C.h>
 #include "Board.h"
 
-#define INIT_GAIN 0x2e
+//#define INIT_GAIN 0x2e
+#define INIT_GAIN 0x17
 
 void max9860_I2C_Init(void);
 void max9860_I2C_Read_Status(void);
