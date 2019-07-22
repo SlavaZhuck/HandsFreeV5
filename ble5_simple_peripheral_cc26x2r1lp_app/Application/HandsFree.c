@@ -153,7 +153,9 @@ bool enable_UART_DEBUG = false;
     struct event_indicator_struct_BUF_status event_BUF_status_message;
     struct event_indicator_struct_BLE event_BLE_message;
     uint8_t BUF_status_message_UART_buffer[BASE64_SIZE(sizeof(event_BUF_status_message))];
-    uint8_t BLE_message_UART_buffer[BASE64_SIZE(sizeof(event_BLE_message))];
+    uint8_t BLE_message_UART_buffer_receive[BASE64_SIZE(sizeof(event_BLE_message))];
+    uint8_t BLE_message_UART_buffer_send[BASE64_SIZE(sizeof(event_BLE_message))];
+    uint8_t BLE_message_UART_buffer_send_error[BASE64_SIZE(sizeof(event_BLE_message))];
     uint8_t ascii_buffer_UART_send[sizeof(BUF_status_message_UART_buffer) + 10];
     int32_t ascii_buffer_index = 0;
     static void update_UART_Messages (uint8_t message_type);
@@ -934,7 +936,7 @@ void USER_task_Handler (pzMsg_t *pMsg)
             {
                 memcpy(&uart_data_send[1],                            mic_data_1ch,      sizeof(mic_data_1ch));
 
-                memcpy(&uart_data_send[I2S_SAMP_PER_FRAME*1 + 1],       mic_data_2ch,     sizeof(mic_data_2ch));
+                memcpy(&uart_data_send[I2S_SAMP_PER_FRAME*1 + 1],       raw_data_received,     sizeof(raw_data_received));
 
                 uart_data_send[0]= (40u << 8u) + 41u;   //start bytes for MATLAB ")("
                 uart_data_send[I2S_SAMP_PER_FRAME*2 + 1] = counter_packet_send >>16;
@@ -1033,10 +1035,27 @@ void USER_task_Handler (pzMsg_t *pMsg)
 #ifdef LOGGING
         case PZ_APP_MSG_Send_message_BLE:
         {
-            base64_encode((char *)BLE_message_UART_buffer, (int32_t)(sizeof(BLE_message_UART_buffer)), (const uint8_t *)&event_BLE_message, sizeof(event_BLE_message));
-            BLE_message_UART_buffer[sizeof(BLE_message_UART_buffer) - 1] = 0x0A;
-            UART_write(uart, BLE_message_UART_buffer, sizeof(BLE_message_UART_buffer));
-//            UART_write(uart, &event_BLE_message, sizeof(event_BLE_message));
+            /* different UART buffers were created, because if previous buffer was not sent,
+             * this buffer would be overwritten by new one
+             * */
+            if( PACKET_RECEIVED_MESSAGE_TYPE== event_BLE_message.message_type)
+            {
+                base64_encode((char *)BLE_message_UART_buffer_receive, (int32_t)(sizeof(BLE_message_UART_buffer_receive)), (const uint8_t *)&event_BLE_message, sizeof(event_BLE_message));
+                BLE_message_UART_buffer_receive[sizeof(BLE_message_UART_buffer_receive) - 1] = 0x0A;
+                UART_write(uart, BLE_message_UART_buffer_receive, sizeof(BLE_message_UART_buffer_receive));
+            }
+            else if( PACKET_SENT_MESSAGE_TYPE== event_BLE_message.message_type)
+            {
+                base64_encode((char *)BLE_message_UART_buffer_send, (int32_t)(sizeof(BLE_message_UART_buffer_send)), (const uint8_t *)&event_BLE_message, sizeof(event_BLE_message));
+                BLE_message_UART_buffer_send[sizeof(BLE_message_UART_buffer_send) - 1] = 0x0A;
+                UART_write(uart, BLE_message_UART_buffer_send, sizeof(BLE_message_UART_buffer_send));
+            }
+            else if( PACKET_SENT_ERROR_TYPE== event_BLE_message.message_type)
+            {
+                base64_encode((char *)BLE_message_UART_buffer_send_error, (int32_t)(sizeof(BLE_message_UART_buffer_send_error)), (const uint8_t *)&event_BLE_message, sizeof(event_BLE_message));
+                BLE_message_UART_buffer_send_error[sizeof(BLE_message_UART_buffer_send_error) - 1] = 0x0A;
+                UART_write(uart, BLE_message_UART_buffer_send_error, sizeof(BLE_message_UART_buffer_send_error));
+            }
         }
         break;
 
@@ -1045,7 +1064,6 @@ void USER_task_Handler (pzMsg_t *pMsg)
             base64_encode((char *)BUF_status_message_UART_buffer, (int32_t)(sizeof(BUF_status_message_UART_buffer)), (const uint8_t *)&event_BUF_status_message, sizeof(event_BUF_status_message));
             BUF_status_message_UART_buffer[sizeof(BUF_status_message_UART_buffer) - 1] = 0x0A;
             UART_write(uart, BUF_status_message_UART_buffer, sizeof(BUF_status_message_UART_buffer));
-//            UART_write(uart, &event_BUF_status_message, sizeof(event_BUF_status_message));
 
         }
         break;

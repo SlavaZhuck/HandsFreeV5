@@ -42,7 +42,7 @@ void max9860_I2C_Init(void){
     i2cTxBuffer[9]  = 0x00;//!DAC gain and sidetone                                         0x0B
     i2cTxBuffer[10] = 0x40;//!microphone gain                    //MIC level control        0x0C
     i2cTxBuffer[11] = 0x00;                                     //RESERVED                  0x0D
-    i2cTxBuffer[12] = 0x01;//!microphone AGC                   //MIC automatic gain control 0x0E
+    i2cTxBuffer[12] = 0x3f;//!microphone AGC      0x01  0x3f   //MIC automatic gain control 0x0E
     i2cTxBuffer[13] = 0x4F;//!Noise gate, mic AGC  0x4F                                     0x0F
     i2cTxBuffer[14] = 0x00;//!System shutdown                    //POWER MANAGEMENT         0x10
 

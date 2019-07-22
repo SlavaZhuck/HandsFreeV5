@@ -826,7 +826,6 @@ static void ProjectZero_processGapMessage(gapEventHdr_t *pMsg)
         if(pPkt->hdr.status == SUCCESS)
         {
             ProjectZero_enqueueMsg(PZ_STOP_STREAM_EVT, NULL);
-            //stop_voice_handle();
             // Add connection to list
             ProjectZero_addConn(pPkt->connectionHandle);
 
