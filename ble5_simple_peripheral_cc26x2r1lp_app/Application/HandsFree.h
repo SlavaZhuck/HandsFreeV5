@@ -22,9 +22,11 @@
 #define HIGH_STATE_TIME                     ((TMR_PERIOD) - (LOW_STATE_TIME))   /* time for LED state is ON, used in LED blinking*/
 
 #define SAMP_PERIOD                       (20.0f)  /* in ms. Period of BLE transmissions and read/write to I2S driver*/
+#define MEASURE_PERIOD                    (1.0f)  /* in ms. Period of measure period timer */
 
 
 #define SAMP_TIME                         ((TMR_PERIOD) * (SAMP_PERIOD / 1000.0f) - 1)                                   /* SAMP_PERIOD recalculated to number of system timer ticks */
+#define MEASURE_TIME                      ((TMR_PERIOD) * (MEASURE_PERIOD / 1000.0f) - 1)                                   /* MEASURE_PERIOD recalculated to number of system timer ticks */
 #define PACKET_CODEC_META_DATA            (3u)                                                                           /* 3 bytes for sound codec meta data: previous amplitude and size of step*/
 #define PACKET_PACKET_NUMBER_LENGHT       (4u)                                                                           /* size of packet numer field, uint32_t = 4 bytes*/
 #define V_STREAM_OUTPUT_SOUND_LEN         (TRANSMIT_DATA_LENGTH - PACKET_CODEC_META_DATA - PACKET_PACKET_NUMBER_LENGHT ) /* size of sound data */
@@ -59,6 +61,7 @@
 #define PACKET_SENT_MESSAGE_TYPE     1u
 #define PACKET_SENT_ERROR_TYPE       2u
 #define RECEIVE_BUFFER_STATUS        3u
+#define CONNECTION_STATUS        4u
 
 
 void HandsFree_init (void);
@@ -71,18 +74,21 @@ uint8_t write_aes_key(uint8_t *key);
 
 struct event_indicator_struct_BLE {
     uint8_t message_type;
-    mac_dataType MAC_addr;
-    sid_dataType SID;
     uint32_t timestamp;
     uint32_t packet_number;
 }__attribute__((packed));
 
 struct event_indicator_struct_BUF_status {
     uint8_t message_type;
-    mac_dataType MAC_addr;
-    sid_dataType SID;
     uint32_t timestamp;
     uint8_t buff_status;
+}__attribute__((packed));
+
+
+struct connection_status {
+    uint8_t message_type;
+    mac_dataType MAC_addr;
+    sid_dataType SID;
 }__attribute__((packed));
 
 

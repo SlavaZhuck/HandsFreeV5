@@ -58,12 +58,14 @@ static void start_voice_handle(void);
 static void stop_voice_handle(void);
 static void blink_timer_callback(GPTimerCC26XX_Handle handle, GPTimerCC26XX_IntMask interruptMask);
 static void samp_timer_callback(GPTimerCC26XX_Handle handle, GPTimerCC26XX_IntMask interruptMask);
+static void measure_timer_callback(GPTimerCC26XX_Handle handle, GPTimerCC26XX_IntMask interruptMask);
 /******local functions END***************************************************/
 
 /* Timer variables START***************************************************/
 static GPTimerCC26XX_Params tim_params;
 static GPTimerCC26XX_Handle blink_tim_hdl = NULL;
 static GPTimerCC26XX_Handle measure_tim_hdl = NULL;
+static uint32_t measure_tim_value = 0; /* in ms */
 static GPTimerCC26XX_Handle samp_tim_hdl = NULL;
 static GPTimerCC26XX_Value load_val[2] = {LOW_STATE_TIME, HIGH_STATE_TIME};
 
@@ -138,26 +140,37 @@ static AESCBC_Handle       AESCBCHandle;
 #define MAX_NUM_TX_BYTES    100   // Maximum TX bytes to send in one go
 #define WANTED_RX_BYTES     1     // number of waiting bytes in one go
 
-UART_Handle uart;
+UART_Handle uart; /* global, because it is also used in "Uart_commands.c"*/
 static UART_Params uartParams;
 static uint32_t wantedRxBytes = WANTED_RX_BYTES;            // Number of bytes received so far
 static uint8_t rxBuf[MAX_NUM_RX_BYTES];   // Receive UART buffer
 static int16_t uart_data_send[I2S_SAMP_PER_FRAME * 2 + 1 + 2 + 2]; // 2 I2S buffers, 2 start bytes, 4 bytes counter send, 4 bytes adc counter send
 bool enable_UART_DEBUG = false;
+bool UART_ready = false;
 /******Uart End ***************************************************/
 
 
 
 #ifdef LOGGING
     static uint8_t received_SID[SID_LENGTH] = {0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19};
-    struct event_indicator_struct_BUF_status event_BUF_status_message;
-    struct event_indicator_struct_BLE event_BLE_message;
-    uint8_t BUF_status_message_UART_buffer[BASE64_SIZE(sizeof(event_BUF_status_message))];
-    uint8_t BLE_message_UART_buffer_receive[BASE64_SIZE(sizeof(event_BLE_message))];
-    uint8_t BLE_message_UART_buffer_send[BASE64_SIZE(sizeof(event_BLE_message))];
-    uint8_t BLE_message_UART_buffer_send_error[BASE64_SIZE(sizeof(event_BLE_message))];
-    uint8_t ascii_buffer_UART_send[sizeof(BUF_status_message_UART_buffer) + 10];
-    int32_t ascii_buffer_index = 0;
+    struct event_indicator_struct_BUF_status  event_BUF_status_message;
+    struct event_indicator_struct_BLE         event_BLE_message;
+    struct connection_status                  event_connection_status_message;
+    uint8_t UART_buffer_BUF_status_message    [BASE64_SIZE(sizeof(event_BUF_status_message))];
+    uint8_t UART_buffer_BLE_message_receive   [BASE64_SIZE(sizeof(event_BLE_message))];
+    uint8_t UART_buffer_BLE_message_send      [BASE64_SIZE(sizeof(event_BLE_message))];
+    uint8_t UART_buffer_BLE_message_send_error[BASE64_SIZE(sizeof(event_BLE_message))];
+    uint8_t UART_buffer_connection_status     [BASE64_SIZE(sizeof(event_connection_status_message))];
+
+    static Clock_Struct Uart_Connection_Status;
+    static Clock_Handle Uart_Connection_Status_ClockHandle;
+    static void UART_Send_Connection_Status_SwiFxn(UArg temp);
+
+#define CONNECTION_STATUS_DELAY (10u) /* delay in ms between status messages sending, when BLE connection is established */
+#define CONNECTION_STATUS_MESSAGE_NUM (10u) /* number of periodically sent messages */
+
+    static uint32_t sended_messages = 0u;
+
     static void update_UART_Messages (uint8_t message_type);
     static void swap_endian (uint8_t* pointer, uint32_t size);
 #endif
@@ -292,7 +305,7 @@ void inline sinus_debug (void)
     freq += 10;
     if(freq >= 7000)
     {
-        freq = 1;
+        freq = 10;
     }
     timestamp_sinus_debug_stop = GPTimerCC26XX_getValue(measure_tim_hdl);
     timestamp_sinus_debug_dif = timestamp_sinus_debug_stop-timestamp_sinus_debug_start;
@@ -441,7 +454,7 @@ void start_voice_handle(void)
 #ifdef DEBUG_SINUS
     time = 0;
 #endif
-
+    measure_tim_value = 0;
     skip_counter_packet_send = 0;
     i2s_buffer_error_1 = 0;
     i2s_buffer_error_2 = 0;
@@ -556,6 +569,8 @@ void HandsFree_init (void)
     if (measure_tim_hdl == NULL) {
         while (1);
     }
+    GPTimerCC26XX_setLoadValue(measure_tim_hdl, (GPTimerCC26XX_Value)MEASURE_TIME);
+    GPTimerCC26XX_registerInterrupt(measure_tim_hdl, measure_timer_callback, GPT_INT_TIMEOUT);
 
     I2SCC26XX_init(i2sHandle);
     I2SCC26XX_Handle i2sHandleTmp = NULL;
@@ -601,7 +616,7 @@ void HandsFree_init (void)
         /* UART_open() failed */
         while (1);
     }
-
+    UART_ready = true;
     uint64_t temp = *((uint64_t *)(0x500012E8)) & 0xFFFFFFFFFFFFFF;
     for(uint8_t i = 0 ; i < 6 ; i++)
     {
@@ -624,19 +639,22 @@ void HandsFree_init (void)
     read_aes_key(global_key);
     CryptoKeyPlaintext_initKey(&cryptoKey, (uint8_t*) global_key, sizeof(global_key));
 #ifdef LOGGING
-    for(uint16_t i = 0 ; i < sizeof(event_BUF_status_message.SID); i++)
+    Uart_Connection_Status_ClockHandle = Util_constructClock(&Uart_Connection_Status,
+                                                             UART_Send_Connection_Status_SwiFxn, CONNECTION_STATUS_DELAY,
+                                                       0,
+                                                       0,
+                                                       0);
+    for(uint16_t i = 0 ; i < sizeof(event_connection_status_message.SID); i++)
     {
-        event_BUF_status_message.SID[i] = received_SID[i];
-        event_BLE_message.SID[i] = received_SID[i];
+        event_connection_status_message.SID[i] = received_SID[i];
     }
-    for(uint16_t i = 0 ; i < sizeof(event_BUF_status_message.MAC_addr) ; i++)
+    for(uint16_t i = 0 ; i < sizeof(event_connection_status_message.MAC_addr) ; i++)
     {
-        event_BUF_status_message.MAC_addr[i] = macAddress[i];
-        event_BLE_message.MAC_addr[i] = macAddress[i];
+        event_connection_status_message.MAC_addr[i] = macAddress[i];
     }
+    event_connection_status_message.message_type = CONNECTION_STATUS;
     event_BUF_status_message.message_type = RECEIVE_BUFFER_STATUS;
-    swap_endian((uint8_t*)&event_BLE_message.MAC_addr, sizeof(event_BLE_message.MAC_addr));
-    swap_endian((uint8_t*)&event_BUF_status_message.MAC_addr, sizeof(event_BUF_status_message.MAC_addr));
+    swap_endian((uint8_t*)&event_connection_status_message.MAC_addr, sizeof(event_connection_status_message.MAC_addr));
 
 #endif
 
@@ -736,6 +754,10 @@ void samp_timer_callback(GPTimerCC26XX_Handle handle, GPTimerCC26XX_IntMask inte
 
 #endif
 }
+void measure_timer_callback(GPTimerCC26XX_Handle handle, GPTimerCC26XX_IntMask interruptMask)
+{
+    measure_tim_value++;
+}
 
 void USER_task_Handler (pzMsg_t *pMsg)
 {
@@ -775,7 +797,7 @@ void USER_task_Handler (pzMsg_t *pMsg)
 
         case PZ_GET_FIRST_SOUND_FRAME:
         {
-            timestamp_TOTAL_start = GPTimerCC26XX_getValue(measure_tim_hdl);
+            timestamp_TOTAL_start = measure_tim_value;
             mailpost_usage = Mailbox_getNumPendingMsgs(mailbox);
             if(mailpost_usage>0)
             {
@@ -948,9 +970,13 @@ void USER_task_Handler (pzMsg_t *pMsg)
                 uart_data_send[I2S_SAMP_PER_FRAME*2 + 1 + 4 - 1] = (uint16_t)(counter_adc_data_read);
 
 
-                UART_write(uart, uart_data_send, sizeof(uart_data_send));
+                while(!UART_ready)
+                {
+                    UART_write(uart, uart_data_send, sizeof(uart_data_send));
+                }
+                UART_ready = false;
             }
-            timestamp_TOTAL_stop = GPTimerCC26XX_getValue(measure_tim_hdl);
+            timestamp_TOTAL_stop = measure_tim_value;
             timestamp_TOTAL_dif = timestamp_TOTAL_stop - timestamp_TOTAL_start;
         }
         break;
@@ -1040,31 +1066,59 @@ void USER_task_Handler (pzMsg_t *pMsg)
              * */
             if( PACKET_RECEIVED_MESSAGE_TYPE== event_BLE_message.message_type)
             {
-                base64_encode((char *)BLE_message_UART_buffer_receive, (int32_t)(sizeof(BLE_message_UART_buffer_receive)), (const uint8_t *)&event_BLE_message, sizeof(event_BLE_message));
-                BLE_message_UART_buffer_receive[sizeof(BLE_message_UART_buffer_receive) - 1] = 0x0A;
-                UART_write(uart, BLE_message_UART_buffer_receive, sizeof(BLE_message_UART_buffer_receive));
+                base64_encode((char *)UART_buffer_BLE_message_receive, (int32_t)(sizeof(UART_buffer_BLE_message_receive)), (const uint8_t *)&event_BLE_message, sizeof(event_BLE_message));
+                UART_buffer_BLE_message_receive[sizeof(UART_buffer_BLE_message_receive) - 1] = 0x0A;
+                while(!UART_ready)
+                {
+                    UART_write(uart, UART_buffer_BLE_message_receive, sizeof(UART_buffer_BLE_message_receive));
+                }
+                UART_ready = false;
             }
             else if( PACKET_SENT_MESSAGE_TYPE== event_BLE_message.message_type)
             {
-                base64_encode((char *)BLE_message_UART_buffer_send, (int32_t)(sizeof(BLE_message_UART_buffer_send)), (const uint8_t *)&event_BLE_message, sizeof(event_BLE_message));
-                BLE_message_UART_buffer_send[sizeof(BLE_message_UART_buffer_send) - 1] = 0x0A;
-                UART_write(uart, BLE_message_UART_buffer_send, sizeof(BLE_message_UART_buffer_send));
+                base64_encode((char *)UART_buffer_BLE_message_send, (int32_t)(sizeof(UART_buffer_BLE_message_send)), (const uint8_t *)&event_BLE_message, sizeof(event_BLE_message));
+                UART_buffer_BLE_message_send[sizeof(UART_buffer_BLE_message_send) - 1] = 0x0A;
+                while(!UART_ready)
+                {
+                    UART_write(uart, UART_buffer_BLE_message_send, sizeof(UART_buffer_BLE_message_send));
+                }
+                UART_ready = false;
             }
             else if( PACKET_SENT_ERROR_TYPE== event_BLE_message.message_type)
             {
-                base64_encode((char *)BLE_message_UART_buffer_send_error, (int32_t)(sizeof(BLE_message_UART_buffer_send_error)), (const uint8_t *)&event_BLE_message, sizeof(event_BLE_message));
-                BLE_message_UART_buffer_send_error[sizeof(BLE_message_UART_buffer_send_error) - 1] = 0x0A;
-                UART_write(uart, BLE_message_UART_buffer_send_error, sizeof(BLE_message_UART_buffer_send_error));
+                base64_encode((char *)UART_buffer_BLE_message_send_error, (int32_t)(sizeof(UART_buffer_BLE_message_send_error)), (const uint8_t *)&event_BLE_message, sizeof(event_BLE_message));
+                UART_buffer_BLE_message_send_error[sizeof(UART_buffer_BLE_message_send_error) - 1] = 0x0A;
+                while(!UART_ready)
+                {
+                    UART_write(uart, UART_buffer_BLE_message_send_error, sizeof(UART_buffer_BLE_message_send_error));
+                }
+                UART_ready = false;
             }
         }
         break;
 
         case PZ_APP_MSG_Send_message_Buf_Status:
         {
-            base64_encode((char *)BUF_status_message_UART_buffer, (int32_t)(sizeof(BUF_status_message_UART_buffer)), (const uint8_t *)&event_BUF_status_message, sizeof(event_BUF_status_message));
-            BUF_status_message_UART_buffer[sizeof(BUF_status_message_UART_buffer) - 1] = 0x0A;
-            UART_write(uart, BUF_status_message_UART_buffer, sizeof(BUF_status_message_UART_buffer));
+            base64_encode((char *)UART_buffer_BUF_status_message, (int32_t)(sizeof(UART_buffer_BUF_status_message)), (const uint8_t *)&event_BUF_status_message, sizeof(event_BUF_status_message));
+            UART_buffer_BUF_status_message[sizeof(UART_buffer_BUF_status_message) - 1] = 0x0A;
+            while(!UART_ready)
+            {
+                UART_write(uart, UART_buffer_BUF_status_message, sizeof(UART_buffer_BUF_status_message));
+            }
+            UART_ready = false;
 
+        }
+        break;
+
+        case PZ_APP_MSG_Send_message_CONN_Status:
+        {
+            base64_encode((char *)UART_buffer_connection_status, (int32_t)(sizeof(UART_buffer_connection_status)), (const uint8_t *)&event_connection_status_message, sizeof(event_connection_status_message));
+            UART_buffer_connection_status[sizeof(UART_buffer_connection_status) - 1] = 0x0A;
+            while(!UART_ready)
+            {
+                UART_write(uart, UART_buffer_connection_status, sizeof(UART_buffer_connection_status));
+            }
+            UART_ready = false;
         }
         break;
 #endif
@@ -1135,6 +1189,21 @@ static void GetSecondSoundBuf_SwiFxn(UArg temp)
 {
     ProjectZero_enqueueMsg(PZ_GET_SECOND_SOUND_FRAME_SEND_PACKET_EVT, NULL);
 }
+
+#ifdef LOGGING
+
+static void UART_Send_Connection_Status_SwiFxn(UArg temp)
+{
+    while(sended_messages < CONNECTION_STATUS_MESSAGE_NUM) /* while not all status messages were sent */
+    {
+        ProjectZero_enqueueMsg(PZ_APP_MSG_Send_message_CONN_Status, NULL);
+        sended_messages++;
+        Util_startClock((Clock_Struct *)Uart_Connection_Status_ClockHandle);
+    }
+}
+
+#endif
+
 /*
  * @brief   Handle a CCCD (configuration change) write received from a peer
  *          device. This tells us whether the peer device wants us to send
@@ -1199,14 +1268,14 @@ void ProjectZero_DataService_ValueChangeHandler(
 #ifdef LOGGING
         memset(received_SID, 0, SID_LENGTH);
         memcpy(received_SID, pCharData->data, SID_LENGTH);
-        for(uint16_t i = 0 ; i < sizeof(event_BUF_status_message.SID); i++)
+        for(uint16_t i = 0 ; i < sizeof(event_connection_status_message.SID); i++)
         {
-            event_BUF_status_message.SID[i] = received_SID[i];
-            event_BLE_message.SID[i] = received_SID[i];
+            event_connection_status_message.SID[i] = received_SID[i];
         }
-        swap_endian((uint8_t*)&event_BUF_status_message.SID, sizeof(event_BUF_status_message.SID));
-        swap_endian((uint8_t*)&event_BLE_message.SID, sizeof(event_BLE_message.SID));
+        swap_endian((uint8_t*)&event_connection_status_message.SID, sizeof(event_connection_status_message.SID));
 
+        sended_messages = 0;/* update number of already sent messages if new SID was received */
+        Util_startClock((Clock_Struct *)Uart_Connection_Status_ClockHandle); /* start to periodically send status messages to UART */
 #endif
         break;
 
@@ -1232,7 +1301,8 @@ void ProjectZero_DataService_ValueChangeHandler(
 #ifdef LOGGING
 static void update_UART_Messages (uint8_t message_type)
 {
-    uint32_t timestamp = GPTimerCC26XX_getValue(measure_tim_hdl);
+    //uint32_t timestamp = GPTimerCC26XX_getValue(measure_tim_hdl);
+    uint32_t timestamp = measure_tim_value;
     event_BLE_message.message_type = message_type;
     event_BLE_message.packet_number = counter_packet_received;
     event_BLE_message.timestamp = timestamp;
@@ -1315,6 +1385,7 @@ static void AudioDuplex_enableCache()
 static void writeCallback(UART_Handle handle_uart, void *rxBuf, size_t size)
 {
 //SPPBLEServer_enqueueUARTMsg(SBC_UART_CHANGE_EVT,rxBuf,size);
+    UART_ready = true;
 }
 
 static void readCallback(UART_Handle handle, void *rxBuf, size_t size)
