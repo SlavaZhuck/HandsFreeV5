@@ -146,7 +146,7 @@ static uint32_t wantedRxBytes = WANTED_RX_BYTES;            // Number of bytes r
 static uint8_t rxBuf[MAX_NUM_RX_BYTES];   // Receive UART buffer
 static int16_t uart_data_send[I2S_SAMP_PER_FRAME * 2 + 1 + 2 + 2]; // 2 I2S buffers, 2 start bytes, 4 bytes counter send, 4 bytes adc counter send
 bool enable_UART_DEBUG = false;
-bool UART_ready = false;
+bool UART_ready = true;
 /******Uart End ***************************************************/
 
 
@@ -156,18 +156,26 @@ bool UART_ready = false;
     struct event_indicator_struct_BUF_status  event_BUF_status_message;
     struct event_indicator_struct_BLE         event_BLE_message;
     struct connection_status                  event_connection_status_message;
-    uint8_t UART_buffer_BUF_status_message    [BASE64_SIZE(sizeof(event_BUF_status_message))];
-    uint8_t UART_buffer_BLE_message_receive   [BASE64_SIZE(sizeof(event_BLE_message))];
-    uint8_t UART_buffer_BLE_message_send      [BASE64_SIZE(sizeof(event_BLE_message))];
-    uint8_t UART_buffer_BLE_message_send_error[BASE64_SIZE(sizeof(event_BLE_message))];
+    uint8_t UART_BUF_status_message    [BASE64_SIZE(sizeof(event_BUF_status_message))];
+    uint8_t logging_buffer_BLE_message_receive   [BASE64_SIZE(sizeof(event_BLE_message))];
+    uint8_t logging_buffer_BLE_message_send      [BASE64_SIZE(sizeof(event_BLE_message))];
+    uint8_t logging_buffer_BLE_message_send_error[BASE64_SIZE(sizeof(event_BLE_message))];
     uint8_t UART_buffer_connection_status     [BASE64_SIZE(sizeof(event_connection_status_message))];
 
     static Clock_Struct Uart_Connection_Status;
     static Clock_Handle Uart_Connection_Status_ClockHandle;
     static void UART_Send_Connection_Status_SwiFxn(UArg temp);
 
+    static Clock_Struct LogUART_send_ChannelSwitchClock;
+    static Clock_Handle LogUART_send_ClockHandle;
+    static void LogUART_send_SwiFxn(UArg temp);
+
+    static Mailbox_Handle mailbox_for_UART;
+    static uint8_t mailpost_for_UART_usage;
+    uint8_t UART_logging_message   [(sizeof(logging_buffer_BLE_message_receive))];
+    
 #define CONNECTION_STATUS_DELAY (10u) /* delay in ms between status messages sending, when BLE connection is established */
-#define CONNECTION_STATUS_MESSAGE_NUM (10u) /* number of periodically sent messages */
+#define CONNECTION_STATUS_MESSAGE_NUM (2u) /* number of periodically sent messages */
 
     static uint32_t sended_messages = 0u;
 
@@ -463,11 +471,7 @@ void start_voice_handle(void)
     counter_packet_send = 0;
     counter_adc_data_read = 0;
     counter_packet_received = 0;
-#ifdef LOGGING
-//    memset(received_SID, 0, SID_LENGTH);
-//    memset(&event_BLE_message, 0, sizeof(event_BLE_message)) ;
-//    memset(&event_BUF_status_message, 0, sizeof(event_BUF_status_message)) ;
-#endif
+
     max9860_I2C_Shutdown_state(0);//disable shutdown_mode
     //ProjectZero_enqueueMsg(PZ_APP_MSG_Load_vol, NULL);// read global vol level
     osal_snv_read(INIT_VOL_ADDR, 1, &current_volume);
@@ -477,28 +481,26 @@ void start_voice_handle(void)
     GPTimerCC26XX_start(measure_tim_hdl);
     I2SCC26XX_startStream(i2sHandle);
     stream_on = 1;
-
+#ifdef LOGGING
+    Util_startClock((Clock_Struct *)LogUART_send_ClockHandle);
+//    memset(received_SID, 0, SID_LENGTH);
+//    memset(&event_BLE_message, 0, sizeof(event_BLE_message)) ;
+//    memset(&event_BUF_status_message, 0, sizeof(event_BUF_status_message)) ;
+#endif
 }
 
 
 void stop_voice_handle(void)
 {
+#ifdef LOGGING
+    Util_stopClock((Clock_Struct *)LogUART_send_ClockHandle);
+//    memset(received_SID, 0, SID_LENGTH);
+//    memset(&event_BLE_message, 0, sizeof(event_BLE_message)) ;
+//    memset(&event_BUF_status_message, 0, sizeof(event_BUF_status_message)) ;
+#endif
     GPTimerCC26XX_stop(samp_tim_hdl);
     GPTimerCC26XX_stop(measure_tim_hdl);
     max9860_I2C_Shutdown_state(1);//enable shutdown_mode
-    gotBufferInOut = FALSE ;
-
-    /* release all rest sound buffer before stopping stream */
-    bufferRequest.buffersRequested = I2SCC26XX_BUFFER_IN_AND_OUT;
-    gotBufferInOut = I2SCC26XX_requestBuffer(i2sHandle, &bufferRequest);
-    while (gotBufferInOut)
-    {
-        bufferRelease.bufferHandleOut = bufferRequest.bufferHandleOut;
-        bufferRelease.bufferHandleIn = bufferRequest.bufferHandleIn;
-        I2SCC26XX_releaseBuffer(i2sHandle, &bufferRelease);
-        bufferRequest.buffersRequested = I2SCC26XX_BUFFER_IN_AND_OUT;
-        gotBufferInOut = I2SCC26XX_requestBuffer(i2sHandle, &bufferRequest);
-    }
 
     /* stop I2S stream */
     if(stream_on)
@@ -508,6 +510,15 @@ void stop_voice_handle(void)
            while(1);
         }
     }
+    /* release all rest sound buffer before stopping stream */
+    while (I2SCC26XX_requestBuffer(i2sHandle, &bufferRequest))
+    {
+        bufferRelease.bufferHandleIn = bufferRequest.bufferHandleIn;
+        bufferRelease.bufferHandleOut = bufferRequest.bufferHandleOut;
+        I2SCC26XX_releaseBuffer(i2sHandle, &bufferRelease);
+        bufferRequest.buffersRequested = I2SCC26XX_BUFFER_IN_AND_OUT;
+    }
+    gotBufferInOut = FALSE;
 
     PIN_setOutputValue(ledPinHandle, Board_PIN_GLED, 0);
     stream_on = 0;
@@ -616,7 +627,7 @@ void HandsFree_init (void)
         /* UART_open() failed */
         while (1);
     }
-    UART_ready = true;
+
     uint64_t temp = *((uint64_t *)(0x500012E8)) & 0xFFFFFFFFFFFFFF;
     for(uint8_t i = 0 ; i < 6 ; i++)
     {
@@ -639,6 +650,13 @@ void HandsFree_init (void)
     read_aes_key(global_key);
     CryptoKeyPlaintext_initKey(&cryptoKey, (uint8_t*) global_key, sizeof(global_key));
 #ifdef LOGGING
+    mailbox_for_UART = Mailbox_create(sizeof(logging_buffer_BLE_message_receive), MAILBOX_DEPTH, NULL, NULL);
+    LogUART_send_ClockHandle = Util_constructClock(&LogUART_send_ChannelSwitchClock,
+                                                   LogUART_send_SwiFxn, CONNECTION_STATUS_DELAY,
+                                                       1, //1ms
+                                                       false, //not start without ClockStart
+                                                       0);
+
     Uart_Connection_Status_ClockHandle = Util_constructClock(&Uart_Connection_Status,
                                                              UART_Send_Connection_Status_SwiFxn, CONNECTION_STATUS_DELAY,
                                                        0,
@@ -746,11 +764,9 @@ void samp_timer_callback(GPTimerCC26XX_Handle handle, GPTimerCC26XX_IntMask inte
     counter_packet_received++;
     update_UART_Messages(PACKET_SENT_MESSAGE_TYPE);
     ProjectZero_enqueueMsg(PZ_APP_MSG_Send_message_BLE, NULL);
-    ProjectZero_enqueueMsg(PZ_APP_MSG_Send_message_Buf_Status, NULL);
     counter_packet_received++;
     update_UART_Messages(PACKET_SENT_MESSAGE_TYPE);
     ProjectZero_enqueueMsg(PZ_APP_MSG_Send_message_BLE, NULL);
-    ProjectZero_enqueueMsg(PZ_APP_MSG_Send_message_Buf_Status, NULL);
 
 #endif
 }
@@ -950,7 +966,6 @@ void USER_task_Handler (pzMsg_t *pMsg)
                 update_UART_Messages(PACKET_SENT_MESSAGE_TYPE);
 
                 ProjectZero_enqueueMsg(PZ_APP_MSG_Send_message_BLE, NULL);
-                ProjectZero_enqueueMsg(PZ_APP_MSG_Send_message_Buf_Status, NULL);
 #endif
             }
 
@@ -970,11 +985,12 @@ void USER_task_Handler (pzMsg_t *pMsg)
                 uart_data_send[I2S_SAMP_PER_FRAME*2 + 1 + 4 - 1] = (uint16_t)(counter_adc_data_read);
 
 
-                while(!UART_ready)
+                //while(!UART_ready)
                 {
-                    UART_write(uart, uart_data_send, sizeof(uart_data_send));
+                    ; /* wait when previous UART message is sent*/
                 }
                 UART_ready = false;
+                UART_write(uart, uart_data_send, sizeof(uart_data_send));
             }
             timestamp_TOTAL_stop = measure_tim_value;
             timestamp_TOTAL_dif = timestamp_TOTAL_stop - timestamp_TOTAL_start;
@@ -1066,47 +1082,38 @@ void USER_task_Handler (pzMsg_t *pMsg)
              * */
             if( PACKET_RECEIVED_MESSAGE_TYPE== event_BLE_message.message_type)
             {
-                base64_encode((char *)UART_buffer_BLE_message_receive, (int32_t)(sizeof(UART_buffer_BLE_message_receive)), (const uint8_t *)&event_BLE_message, sizeof(event_BLE_message));
-                UART_buffer_BLE_message_receive[sizeof(UART_buffer_BLE_message_receive) - 1] = 0x0A;
-                while(!UART_ready)
-                {
-                    UART_write(uart, UART_buffer_BLE_message_receive, sizeof(UART_buffer_BLE_message_receive));
-                }
-                UART_ready = false;
+                base64_encode((char *)logging_buffer_BLE_message_receive, (int32_t)(sizeof(logging_buffer_BLE_message_receive)), (const uint8_t *)&event_BLE_message, sizeof(event_BLE_message));
+                logging_buffer_BLE_message_receive[sizeof(logging_buffer_BLE_message_receive) - 1] = 0x0A;
+                Mailbox_post(mailbox_for_UART, logging_buffer_BLE_message_receive, BIOS_NO_WAIT);
             }
             else if( PACKET_SENT_MESSAGE_TYPE== event_BLE_message.message_type)
             {
-                base64_encode((char *)UART_buffer_BLE_message_send, (int32_t)(sizeof(UART_buffer_BLE_message_send)), (const uint8_t *)&event_BLE_message, sizeof(event_BLE_message));
-                UART_buffer_BLE_message_send[sizeof(UART_buffer_BLE_message_send) - 1] = 0x0A;
-                while(!UART_ready)
-                {
-                    UART_write(uart, UART_buffer_BLE_message_send, sizeof(UART_buffer_BLE_message_send));
-                }
-                UART_ready = false;
+                base64_encode((char *)logging_buffer_BLE_message_send, (int32_t)(sizeof(logging_buffer_BLE_message_send)), (const uint8_t *)&event_BLE_message, sizeof(event_BLE_message));
+                logging_buffer_BLE_message_send[sizeof(logging_buffer_BLE_message_send) - 1] = 0x0A;
+                Mailbox_post(mailbox_for_UART, logging_buffer_BLE_message_send, BIOS_NO_WAIT);
+
             }
             else if( PACKET_SENT_ERROR_TYPE== event_BLE_message.message_type)
             {
-                base64_encode((char *)UART_buffer_BLE_message_send_error, (int32_t)(sizeof(UART_buffer_BLE_message_send_error)), (const uint8_t *)&event_BLE_message, sizeof(event_BLE_message));
-                UART_buffer_BLE_message_send_error[sizeof(UART_buffer_BLE_message_send_error) - 1] = 0x0A;
-                while(!UART_ready)
-                {
-                    UART_write(uart, UART_buffer_BLE_message_send_error, sizeof(UART_buffer_BLE_message_send_error));
-                }
-                UART_ready = false;
+                base64_encode((char *)logging_buffer_BLE_message_send_error, (int32_t)(sizeof(logging_buffer_BLE_message_send_error)), (const uint8_t *)&event_BLE_message, sizeof(event_BLE_message));
+                logging_buffer_BLE_message_send_error[sizeof(logging_buffer_BLE_message_send_error) - 1] = 0x0A;
+                Mailbox_post(mailbox_for_UART, logging_buffer_BLE_message_send_error, BIOS_NO_WAIT);
+
             }
         }
         break;
 
         case PZ_APP_MSG_Send_message_Buf_Status:
         {
-            base64_encode((char *)UART_buffer_BUF_status_message, (int32_t)(sizeof(UART_buffer_BUF_status_message)), (const uint8_t *)&event_BUF_status_message, sizeof(event_BUF_status_message));
-            UART_buffer_BUF_status_message[sizeof(UART_buffer_BUF_status_message) - 1] = 0x0A;
-            while(!UART_ready)
+            base64_encode((char *)UART_BUF_status_message, (int32_t)(sizeof(UART_BUF_status_message)), (const uint8_t *)&event_BUF_status_message, sizeof(event_BUF_status_message));
+            UART_BUF_status_message[sizeof(UART_BUF_status_message) - 1] = 0x0A;
+            //while(!UART_ready)
             {
-                UART_write(uart, UART_buffer_BUF_status_message, sizeof(UART_buffer_BUF_status_message));
+                ; /* wait when previous UART message is sent*/
             }
             UART_ready = false;
-
+            UART_write(uart, UART_BUF_status_message, sizeof(UART_BUF_status_message));
+//            UART_write(uart, &event_BUF_status_message, sizeof(event_BUF_status_message));
         }
         break;
 
@@ -1116,9 +1123,11 @@ void USER_task_Handler (pzMsg_t *pMsg)
             UART_buffer_connection_status[sizeof(UART_buffer_connection_status) - 1] = 0x0A;
             while(!UART_ready)
             {
-                UART_write(uart, UART_buffer_connection_status, sizeof(UART_buffer_connection_status));
+                ; /* wait when previous UART message is sent*/
             }
             UART_ready = false;
+            UART_write(uart, UART_buffer_connection_status, sizeof(UART_buffer_connection_status));
+//            UART_write(uart, &event_connection_status_message, sizeof(event_connection_status_message));
         }
         break;
 #endif
@@ -1144,7 +1153,6 @@ void USER_task_Handler (pzMsg_t *pMsg)
 #ifdef LOGGING
                     update_UART_Messages(PACKET_SENT_ERROR_TYPE);
                     ProjectZero_enqueueMsg(PZ_APP_MSG_Send_message_BLE, NULL);
-                    ProjectZero_enqueueMsg(PZ_APP_MSG_Send_message_Buf_Status, NULL);
 #endif
                 }
                 else
@@ -1154,7 +1162,6 @@ void USER_task_Handler (pzMsg_t *pMsg)
 #ifdef LOGGING
                     update_UART_Messages(PACKET_SENT_MESSAGE_TYPE);
                     ProjectZero_enqueueMsg(PZ_APP_MSG_Send_message_BLE, NULL);
-                    ProjectZero_enqueueMsg(PZ_APP_MSG_Send_message_Buf_Status, NULL);
 #endif
                 }
             }
@@ -1165,7 +1172,6 @@ void USER_task_Handler (pzMsg_t *pMsg)
 #ifdef LOGGING
                 update_UART_Messages(PACKET_SENT_ERROR_TYPE);
                 ProjectZero_enqueueMsg(PZ_APP_MSG_Send_message_BLE, NULL);
-                ProjectZero_enqueueMsg(PZ_APP_MSG_Send_message_Buf_Status, NULL);
 #endif
 
             }
@@ -1202,6 +1208,19 @@ static void UART_Send_Connection_Status_SwiFxn(UArg temp)
     }
 }
 
+static void LogUART_send_SwiFxn(UArg temp)
+{
+    if(UART_ready)
+    {
+        mailpost_for_UART_usage = Mailbox_getNumPendingMsgs(mailbox_for_UART);
+        if(mailpost_for_UART_usage > 0)
+        {
+            Mailbox_pend(mailbox_for_UART, UART_logging_message, BIOS_NO_WAIT);
+            UART_ready = false;
+            UART_write(uart, UART_logging_message, sizeof(UART_logging_message));
+        }
+    }
+}
 #endif
 
 /*
@@ -1286,7 +1305,6 @@ void ProjectZero_DataService_ValueChangeHandler(
         update_UART_Messages(PACKET_RECEIVED_MESSAGE_TYPE);
 
         ProjectZero_enqueueMsg(PZ_APP_MSG_Send_message_BLE, NULL);
-        ProjectZero_enqueueMsg(PZ_APP_MSG_Send_message_Buf_Status, NULL);
 #endif
         packet_lost_percentage = 100.0f * ((float)counter_packet_send - (float)counter_packet_received) / (float)counter_packet_send;
         // -------------------------
@@ -1304,7 +1322,15 @@ static void update_UART_Messages (uint8_t message_type)
     //uint32_t timestamp = GPTimerCC26XX_getValue(measure_tim_hdl);
     uint32_t timestamp = measure_tim_value;
     event_BLE_message.message_type = message_type;
-    event_BLE_message.packet_number = counter_packet_received;
+    if(PACKET_RECEIVED_MESSAGE_TYPE == message_type)
+    {
+        event_BLE_message.packet_number = counter_packet_received;
+    }
+    else if ((PACKET_SENT_MESSAGE_TYPE == message_type) || (PACKET_SENT_ERROR_TYPE == message_type))
+    {
+        event_BLE_message.packet_number = counter_packet_send;
+    }
+
     event_BLE_message.timestamp = timestamp;
 
     event_BUF_status_message.buff_status = Mailbox_getNumPendingMsgs(mailbox);
