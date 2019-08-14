@@ -144,9 +144,8 @@ extern "C"
 #define PZ_APP_MSG_Resend_Packet                    23  /* Connection Event End notice                 */
 
 #ifdef LOGGING
-#define PZ_APP_MSG_Send_message_BLE                 24  /* Connection Event End notice                 */
-#define PZ_APP_MSG_Send_message_Buf_Status          25  /* Connection Event End notice                 */
-#define PZ_APP_MSG_Send_message_CONN_Status         26  /* Connection Event End notice                 */
+#define PZ_APP_MSG_Send_message_Buf_Status          24  /* Connection Event End notice                 */
+#define PZ_APP_MSG_Send_message_CONN_Status         25  /* Connection Event End notice                 */
 #endif
 
 
