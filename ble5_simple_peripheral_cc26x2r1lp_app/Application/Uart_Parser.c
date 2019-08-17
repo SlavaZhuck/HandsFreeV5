@@ -45,6 +45,7 @@ extern bool enable_NoiseGate;
 extern bool enable_LPF;
 extern bool enable_UART_DEBUG;
 extern bool enable_EC;
+extern uint8_t switch_LPF;
 //static unsigned char adc_val = 1;
 
 //void set_Myaddr(unsigned char addr){
@@ -284,7 +285,19 @@ uint16_t PackProcessing(void){
             send_answer_for_command(STATUS_OK);
             break;
         }
-
+        case LPF_TYPE:
+        {
+            if(Rx_Data.data[0]<=3)
+            {
+                switch_LPF = Rx_Data.data[0];
+                send_answer_for_command(STATUS_OK);
+            }
+            else
+            {
+                send_answer_for_command(STATUS_BAD);
+            }
+            break;
+        }
         default:{
 
             no_command();

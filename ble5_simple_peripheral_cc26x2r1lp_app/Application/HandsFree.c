@@ -97,6 +97,7 @@ volatile static GPTimerCC26XX_Value timestamp_TOTAL_dif;
 
 /***********LPF START****************************************************/
 bool enable_LPF = false;
+uint8_t switch_LPF = 0; // from 0-3. different LPF coeffs
 /***********LPF END****************************************************/
 
 /*****************NOISE GATE START***********************************/
@@ -146,8 +147,8 @@ UART_Handle uart; /* global, because it is also used in "Uart_commands.c"*/
 static UART_Params uartParams;
 static uint32_t wantedRxBytes = WANTED_RX_BYTES;            // Number of bytes received so far
 static uint8_t rxBuf[MAX_NUM_RX_BYTES];   // Receive UART buffer
-static int16_t uart_data_send[I2S_SAMP_PER_FRAME * 2 + 1 + 2 + 2]; // 2 I2S buffers, 2 start bytes, 4 bytes counter send, 4 bytes adc counter send
-bool enable_UART_DEBUG = false;
+static volatile int16_t uart_data_send[I2S_SAMP_PER_FRAME * 2 + 1 + 2 + 2]; // 2 I2S buffers, 2 start bytes, 4 bytes counter send, 4 bytes adc counter send
+bool enable_UART_DEBUG = true;
 bool UART_ready = true;
 /******Uart End ***************************************************/
 
@@ -210,7 +211,7 @@ static I2SCC26XX_Params i2sParams =
 };
 
 static int16_t raw_data_received[I2S_SAMP_PER_FRAME];
-static int16_t mic_data_1ch[I2S_SAMP_PER_FRAME];
+static volatile int16_t mic_data_1ch[I2S_SAMP_PER_FRAME];
 
 #ifdef SECOND_MICROPHONE
 static int16_t mic_data[I2S_SAMP_PER_FRAME*2];
@@ -288,7 +289,10 @@ void inline sinus_debug (void)
         freq = 10;
     }
     timestamp_sinus_debug_stop = GPTimerCC26XX_getValue(measure_tim_hdl);
-    timestamp_sinus_debug_dif = timestamp_sinus_debug_stop-timestamp_sinus_debug_start;
+    if(timestamp_sinus_debug_stop >= timestamp_sinus_debug_start)
+    {
+        timestamp_sinus_debug_dif = timestamp_sinus_debug_stop-timestamp_sinus_debug_start;
+    }
 }
 #endif
 
@@ -329,23 +333,16 @@ void rt_OneStep(void)
 
 static void LPF_partial_processing ( uint16_t start_index, uint16_t stop_index, bool enable, bool first_buffer)
 {
-    static uint32_t timestamp_LPF_start = 0;
-    static uint32_t timestamp_LPF_stop  = 0;
-    static uint32_t timestamp_LPF_dif   = 0;
-    static uint32_t timestamp_LPF_prev  = 0;
+    static volatile uint32_t timestamp_LPF_start = 0;
+    static volatile uint32_t timestamp_LPF_stop  = 0;
+    static volatile uint32_t timestamp_LPF_dif   = 0;
+    static volatile uint32_t timestamp_LPF_prev  = 0;
 
     if(enable)
     {
         timestamp_LPF_start =  GPTimerCC26XX_getValue(measure_tim_hdl);
-        if(first_buffer)
-        {
-            timestamp_LPF_prev = 0;
-        }
-        else
-        {
-            timestamp_LPF_dif = timestamp_LPF_prev;
-        }
 
+        rtU.switch_a = switch_LPF;
         for(uint16_t i = start_index ; i< stop_index; i++)
         {
             //raw_mic_data[i] = mic_data_1ch[i];
@@ -354,7 +351,21 @@ static void LPF_partial_processing ( uint16_t start_index, uint16_t stop_index, 
             mic_data_1ch[i] = (int16)rtY.Out1;
         }
         timestamp_LPF_stop =  GPTimerCC26XX_getValue(measure_tim_hdl);
-        timestamp_LPF_dif += timestamp_LPF_stop - timestamp_LPF_start;
+        if(first_buffer)
+        {
+            if(timestamp_LPF_stop>=timestamp_LPF_start)
+            {
+                timestamp_LPF_prev = timestamp_LPF_stop - timestamp_LPF_start;
+            }
+        }
+        else
+        {
+            if(timestamp_LPF_stop>=timestamp_LPF_start)
+            {
+                timestamp_LPF_dif = timestamp_LPF_stop - timestamp_LPF_start + timestamp_LPF_prev;
+                timestamp_LPF_prev = 0;
+            }
+        }
     }
 }
 
@@ -367,7 +378,7 @@ static void EC_partial_processing ( uint16_t start_index, uint16_t stop_index, b
 
     if(enable)
     {
-        timestamp_EC_start =  GPTimerCC26XX_getValue(measure_tim_hdl);
+        timestamp_EC_start =  measure_tim_value;
         if(first_buffer)
         {
             timestamp_EC_prev = 0;
@@ -387,7 +398,7 @@ static void EC_partial_processing ( uint16_t start_index, uint16_t stop_index, b
             mic_data_1ch[i] = (int16_t)rtYeC.OutputeC;
             EC_data_debug[i] = rtYeC.debug_erroreC;
         }
-        timestamp_EC_stop =  GPTimerCC26XX_getValue(measure_tim_hdl);
+        timestamp_EC_stop =  measure_tim_value;
         timestamp_EC_dif += timestamp_EC_stop - timestamp_EC_start;
     }
     else
@@ -402,6 +413,7 @@ void start_voice_handle(void)
     /* init debug variables and counters*/
 #ifdef DEBUG_SINUS
     time = 0;
+    freq = 10;
 #endif
     measure_tim_value = 0;
     skip_counter_packet_send = 0;
@@ -485,6 +497,7 @@ void HandsFree_init (void)
     buttons_init();
     power_battery_init();
     LPF_initialize();
+    rtU.switch_a = switch_LPF;
     Echo_cancel_initialize();
     max9860_I2C_Init();
     max9860_I2C_Read_Status();
