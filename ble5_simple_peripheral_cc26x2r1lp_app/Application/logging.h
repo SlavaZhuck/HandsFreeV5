@@ -16,7 +16,7 @@
 #endif
 
 void logging_init(void);
-void send_log_message_to_UART_mailbox (uint8_t message_type);
+void send_log_message_to_UART_mailbox (uint8_t message_type, uint32_t counter_packet_received_uart);
 void swap_endian (uint8_t* pointer, uint32_t size);
 void start_logging_clock (void);
 void stop_logging_clock (void);

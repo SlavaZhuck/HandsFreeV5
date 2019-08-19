@@ -147,8 +147,8 @@ UART_Handle uart; /* global, because it is also used in "Uart_commands.c"*/
 static UART_Params uartParams;
 static uint32_t wantedRxBytes = WANTED_RX_BYTES;            // Number of bytes received so far
 static uint8_t rxBuf[MAX_NUM_RX_BYTES];   // Receive UART buffer
-static volatile int16_t uart_data_send[I2S_SAMP_PER_FRAME * 2 + 1 + 2 + 2]; // 2 I2S buffers, 2 start bytes, 4 bytes counter send, 4 bytes adc counter send
-bool enable_UART_DEBUG = true;
+static int16_t uart_data_send[I2S_SAMP_PER_FRAME * 2 + 1 + 2 + 2]; // 2 I2S buffers, 2 start bytes, 4 bytes counter send, 4 bytes adc counter send
+bool enable_UART_DEBUG = false;
 bool UART_ready = true;
 /******Uart End ***************************************************/
 
@@ -211,7 +211,7 @@ static I2SCC26XX_Params i2sParams =
 };
 
 static int16_t raw_data_received[I2S_SAMP_PER_FRAME];
-static volatile int16_t mic_data_1ch[I2S_SAMP_PER_FRAME];
+static int16_t mic_data_1ch[I2S_SAMP_PER_FRAME];
 
 #ifdef SECOND_MICROPHONE
 static int16_t mic_data[I2S_SAMP_PER_FRAME*2];
@@ -333,10 +333,10 @@ void rt_OneStep(void)
 
 static void LPF_partial_processing ( uint16_t start_index, uint16_t stop_index, bool enable, bool first_buffer)
 {
-    static volatile uint32_t timestamp_LPF_start = 0;
-    static volatile uint32_t timestamp_LPF_stop  = 0;
-    static volatile uint32_t timestamp_LPF_dif   = 0;
-    static volatile uint32_t timestamp_LPF_prev  = 0;
+    static uint32_t timestamp_LPF_start = 0;
+    static uint32_t timestamp_LPF_stop  = 0;
+    static uint32_t timestamp_LPF_dif   = 0;
+    static uint32_t timestamp_LPF_prev  = 0;
 
     if(enable)
     {
@@ -890,7 +890,7 @@ void USER_task_Handler (pzMsg_t *pMsg)
                 counter_packet_send++;
                 resend_counter = 0;
 #ifdef LOGGING
-                send_log_message_to_UART_mailbox(PACKET_SENT_MESSAGE_TYPE);
+                send_log_message_to_UART_mailbox(PACKET_SENT_MESSAGE_TYPE, 0);
 #endif
             }
 
@@ -1032,7 +1032,7 @@ void USER_task_Handler (pzMsg_t *pMsg)
                     error_counter_packet_send++;
                     //save_counter_packet_send = 0;
 #ifdef LOGGING
-                    send_log_message_to_UART_mailbox(PACKET_SENT_ERROR_TYPE);
+                    send_log_message_to_UART_mailbox(PACKET_SENT_ERROR_TYPE, 0);
 #endif
                 }
                 else
@@ -1040,7 +1040,7 @@ void USER_task_Handler (pzMsg_t *pMsg)
                     resend_counter = 0;
                     counter_packet_send++;
 #ifdef LOGGING
-                    send_log_message_to_UART_mailbox(PACKET_SENT_MESSAGE_TYPE);
+                    send_log_message_to_UART_mailbox(PACKET_SENT_MESSAGE_TYPE, 0);
 #endif
                 }
             }
@@ -1049,7 +1049,7 @@ void USER_task_Handler (pzMsg_t *pMsg)
                 skip_counter_packet_send++;
                 resend_counter = 0;
 #ifdef LOGGING
-                send_log_message_to_UART_mailbox(PACKET_SENT_ERROR_TYPE);
+                send_log_message_to_UART_mailbox(PACKET_SENT_ERROR_TYPE, 0);
 #endif
 
             }
@@ -1124,13 +1124,14 @@ void ProjectZero_DataService_CfgChangeHandler(pzCharacteristicData_t *pCharData)
  *
  * @return  None.
  */
+uint32_t counter_packet_received_uart = 0;
 void ProjectZero_DataService_ValueChangeHandler(
     pzCharacteristicData_t *pCharData)
 {
     // Value to hold the received string for printing via Log, as Log printouts
     // happen in the Idle task, and so need to refer to a global/static variable.
 
-
+    counter_packet_received_uart = 0;
     switch(pCharData->paramID)
     {
     case DS_STREAM_START_ID:
@@ -1146,7 +1147,11 @@ void ProjectZero_DataService_ValueChangeHandler(
         Mailbox_post(mailbox, pCharData->data, BIOS_NO_WAIT);
         counter_packet_received++;
 #ifdef LOGGING
-        send_log_message_to_UART_mailbox(PACKET_RECEIVED_MESSAGE_TYPE);
+        counter_packet_received_uart = (uint32_t)(pCharData->data[TRANSMIT_DATA_LENGTH - 4] << 24);
+        counter_packet_received_uart |= (uint32_t)(pCharData->data[TRANSMIT_DATA_LENGTH - 3] << 16);
+        counter_packet_received_uart |= (uint32_t)(pCharData->data[TRANSMIT_DATA_LENGTH - 2] << 8);
+        counter_packet_received_uart |= (uint32_t)(pCharData->data[TRANSMIT_DATA_LENGTH - 1]);
+        send_log_message_to_UART_mailbox(PACKET_RECEIVED_MESSAGE_TYPE, counter_packet_received_uart);
 #endif
         packet_lost_percentage = 100.0f * ((float)counter_packet_send - (float)counter_packet_received) / (float)counter_packet_send;
         // -------------------------

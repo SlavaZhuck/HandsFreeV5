@@ -106,14 +106,14 @@ void logging_init(void)
 }
 
 
-void send_log_message_to_UART_mailbox (uint8_t message_type)
+void send_log_message_to_UART_mailbox (uint8_t message_type, uint32_t counter_packet_received_uart)
 {
     //uint32_t timestamp = GPTimerCC26XX_getValue(measure_tim_hdl);
     uint32_t timestamp = measure_tim_value;
     event_BLE_message.message_type = message_type;
     if(PACKET_RECEIVED_MESSAGE_TYPE == message_type)
     {
-        event_BLE_message.packet_number = counter_packet_received;
+        event_BLE_message.packet_number = counter_packet_received_uart;
     }
     else if ((PACKET_SENT_MESSAGE_TYPE == message_type) || (PACKET_SENT_ERROR_TYPE == message_type))
     {
