@@ -54,10 +54,10 @@
 
 #include <icall.h>
 
-/* This Header file contains all BLE API and icall structure definition */
-#include "icall_ble_api.h"
 
 #include "data_service.h"
+/* This Header file contains all BLE API and icall structure definition */
+#include "icall_ble_api.h"
 
 /*********************************************************************
  * MACROS

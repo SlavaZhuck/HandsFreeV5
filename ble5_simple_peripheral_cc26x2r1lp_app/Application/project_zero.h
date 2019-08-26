@@ -83,8 +83,6 @@ extern "C"
 
 #include <icall.h>
 #include <bcomdef.h>
-/* This Header file contains all BLE API and icall structure definition */
-#include <icall_ble_api.h>
 #include <util.h>
 /* Bluetooth Profiles */
 #include <devinfoservice.h>
@@ -93,6 +91,9 @@ extern "C"
 
 /* Application specific includes */
 #include <Board.h>
+/* This Header file contains all BLE API and icall structure definition */
+#include <icall_ble_api.h>
+
 /*********************************************************************
  *  EXTERNAL VARIABLES
  */
