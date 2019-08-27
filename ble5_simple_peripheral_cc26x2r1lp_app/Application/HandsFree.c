@@ -481,6 +481,7 @@ void stop_voice_handle(void)
 //        Watchdog_clear(watchdogHandle);
 //        Watchdog_close(watchdogHandle);
 //    }
+    max9860_I2C_Shutdown_state(1);//enable shutdown_mode
 #ifdef LOGGING
     stop_logging_clock();
 //    memset(received_SID, 0, SID_LENGTH);
@@ -489,7 +490,6 @@ void stop_voice_handle(void)
 #endif
     GPTimerCC26XX_stop(samp_tim_hdl);
     GPTimerCC26XX_stop(measure_tim_hdl);
-    max9860_I2C_Shutdown_state(1);//enable shutdown_mode
 
     /* stop I2S stream */
     if(stream_on)
@@ -931,7 +931,7 @@ void USER_task_Handler (pzMsg_t *pMsg)
 #ifdef LOGGING
                 send_log_message_to_UART_mailbox(PACKET_SENT_MESSAGE_TYPE, 0);
 #endif
-                counter_packet_send++;
+                counter_packet_send++;  /* increment total packet send counter */
             }
 
             if(enable_UART_DEBUG)
@@ -1040,12 +1040,6 @@ void USER_task_Handler (pzMsg_t *pMsg)
         }
         break;
 #ifdef LOGGING
-        case PZ_APP_MSG_Send_message_Buf_Status:
-        {
-            Send_message_Buf_Status();
-        }
-        break;
-
         case PZ_APP_MSG_Send_message_CONN_Status:
         {
             Send_message_CONN_Status ();
@@ -1061,52 +1055,34 @@ void USER_task_Handler (pzMsg_t *pMsg)
         break;
 
         case PZ_APP_MSG_Resend_Packet:
-//            /* increment resend counter, resend no more than 3 times */
-//            resend_counter++;
-//            if(resend_counter <= 1) /*number of timeslots, when message is able to resend. Depends 20ms conn interval, 5ms(RESEND_DELAY) resend interval */
-//            {
             if(counter_packet_send == save_counter_packet_send)
             {
                 send_status = DataService_SetParameter(DS_STREAM_OUTPUT_ID, DS_STREAM_OUTPUT_LEN, send_array);
                 if((send_status != SUCCESS) || (send_status == 0x15)) /* 0x15 bleNoResources*/
                 {
-                   // Util_startClock((Clock_Struct *)Resend_BLEpacket_ClockHandle);
 #ifdef LOGGING
                     send_log_message_to_UART_mailbox(PACKET_SENT_ERROR_TYPE, 0);
 #endif
-                    counter_packet_not_send++;
-                    //save_counter_packet_send = 0;
+                    counter_packet_not_send++; /* counter of not sent packets*/
+                    counter_packet_send++;  /* increment total packet send counter */
                 }
                 else
                 {
-//                    resend_counter = 0;
 #ifdef LOGGING
                     send_log_message_to_UART_mailbox(PACKET_SENT_MESSAGE_TYPE, 0);
 #endif
-                    counter_packet_send++;
+                    counter_packet_send++;  /* increment total packet send counter */
                 }
             }
             else/*for some reasons new packet was formed*/
             {
-                skip_counter_packet_send++;
-//                resend_counter = 0;
+                skip_counter_packet_send++;  /* counter of skipped packets, shouldn't be incremented in normal situations*/
 #ifdef LOGGING
                 send_log_message_to_UART_mailbox(PACKET_SENT_ERROR_TYPE, 0);
 #endif
-                counter_packet_send++;
+                counter_packet_send++;  /* increment total packet send counter */
             }
-//            }
-//            else/* if after 2 resend iteretaions was unsuccessfull*/
-//            {
-//#ifdef LOGGING
-//                send_log_message_to_UART_mailbox(PACKET_SENT_ERROR_TYPE, 0);
-//#endif
-//                counter_packet_send++;
-//                resend_counter = 0;
-//                counter_packet_not_send++;
-//            }
         break;
-
 
         default:
         break;

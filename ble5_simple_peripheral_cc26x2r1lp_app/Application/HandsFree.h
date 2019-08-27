@@ -61,35 +61,13 @@
 #define PACKET_SENT_MESSAGE_TYPE     1u
 #define PACKET_SENT_ERROR_TYPE       2u
 #define RECEIVE_BUFFER_STATUS        3u
-#define CONNECTION_STATUS        4u
+#define CONNECTION_STATUS            4u
 
 
 void HandsFree_init (void);
 
-typedef uint8_t mac_dataType[MAC_SIZE];
-typedef uint8_t sid_dataType[SID_LENGTH];
 
 uint8_t read_aes_key(uint8_t *key);
 uint8_t write_aes_key(uint8_t *key);
-
-struct event_indicator_struct_BLE {
-    uint8_t message_type;
-    uint32_t timestamp;
-    uint32_t packet_number;
-}__attribute__((packed));
-
-struct event_indicator_struct_BUF_status {
-    uint8_t message_type;
-    uint32_t timestamp;
-    uint8_t buff_status;
-}__attribute__((packed));
-
-
-struct connection_status {
-    uint8_t message_type;
-    mac_dataType MAC_addr;
-    sid_dataType SID;
-}__attribute__((packed));
-
 
 #endif /* APPLICATION_HANDSFREE_H_ */

@@ -6,7 +6,6 @@
  */
 #include "logging.h"
 #include "GeneralDef.h"
-#include "HandsFree.h"
 #include <ti/sysbios/knl/Mailbox.h>
 
 #include <ti/sysbios/BIOS.h>
@@ -20,27 +19,25 @@ extern uint32_t counter_packet_received;
 extern volatile uint32_t counter_packet_send;
 extern Mailbox_Handle mailbox;
 
-static uint8_t received_SID[SID_LENGTH] = {0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19};
-struct event_indicator_struct_BUF_status  event_BUF_status_message;
-struct event_indicator_struct_BLE         event_BLE_message;
-struct connection_status                  event_connection_status_message;
-static uint8_t UART_BUF_status_message               [BASE64_SIZE(sizeof(event_BUF_status_message))];
-static uint8_t logging_buffer_BLE_message_receive    [BASE64_SIZE(sizeof(event_BLE_message))];
-static uint8_t logging_buffer_BLE_message_send       [BASE64_SIZE(sizeof(event_BLE_message))];
-static uint8_t logging_buffer_BLE_message_send_error [BASE64_SIZE(sizeof(event_BLE_message))];
-static uint8_t UART_buffer_connection_status         [BASE64_SIZE(sizeof(event_connection_status_message))];
+static uint8_t received_SID[SID_LENGTH] = {0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19}; /* init values for debug purpose only */
 
-static Clock_Struct Uart_Connection_Status;
+struct event_indicator_struct_BLE         event_BLE_message; /* log message, received from Application*/
+struct connection_status                  event_connection_status_message; /* event connection status message, formed here and is sent only at connection event*/
+
+static uint8_t log_buffer_mailbox_UART               [BASE64_SIZE(sizeof(event_BLE_message))]; /*log message, received from Application, converted to b64 */
+static uint8_t UART_buffer_connection_status         [BASE64_SIZE(sizeof(event_connection_status_message))]; /* event connection status message, converted to b64 */
+uint8_t UART_logging_message   [(sizeof(log_buffer_mailbox_UART))]; /* UART send buffer */
+
+static Clock_Struct Uart_Connection_Status; /* clock to several times sending (with CONNECTION_STATUS_DELAY interval) event connection status message after connection event*/
 static Clock_Handle Uart_Connection_Status_ClockHandle;
 static void UART_Send_Connection_Status_SwiFxn(UArg temp);
 
-static Clock_Struct LogUART_send_ChannelSwitchClock;
+static Clock_Struct LogUART_send_ChannelSwitchClock; /* 1ms clock to cyclically sending log messages to UART*/
 static Clock_Handle LogUART_send_ClockHandle;
 static void LogUART_send_SwiFxn(UArg temp);
 
 static Mailbox_Handle mailbox_for_UART;
 static uint8_t mailpost_for_UART_usage;
-uint8_t UART_logging_message   [(sizeof(logging_buffer_BLE_message_receive))];
 
 #define CONNECTION_STATUS_DELAY (10u) /* delay in ms between status messages sending, when BLE connection is established */
 #define CONNECTION_STATUS_MESSAGE_NUM (2u) /* number of periodically sent messages */
@@ -79,7 +76,7 @@ char *base64_encode(char *out, int out_size, const uint8_t *in, int in_size)
 
 void logging_init(void)
 {
-    mailbox_for_UART = Mailbox_create(sizeof(logging_buffer_BLE_message_receive), MAILBOX_DEPTH, NULL, NULL);
+    mailbox_for_UART = Mailbox_create(sizeof(log_buffer_mailbox_UART), MAILBOX_DEPTH, NULL, NULL);
     LogUART_send_ClockHandle = Util_constructClock(&LogUART_send_ChannelSwitchClock,
                                                    LogUART_send_SwiFxn, CONNECTION_STATUS_DELAY,
                                                        1, //1ms
@@ -100,7 +97,6 @@ void logging_init(void)
         event_connection_status_message.MAC_addr[i] = macAddress[i];
     }
     event_connection_status_message.message_type = CONNECTION_STATUS;
-    event_BUF_status_message.message_type = RECEIVE_BUFFER_STATUS;
     swap_endian((uint8_t*)&event_connection_status_message.MAC_addr, sizeof(event_connection_status_message.MAC_addr));
 
 }
@@ -108,7 +104,6 @@ void logging_init(void)
 
 void send_log_message_to_UART_mailbox (uint8_t message_type, uint32_t counter_packet_received_uart)
 {
-    //uint32_t timestamp = GPTimerCC26XX_getValue(measure_tim_hdl);
     uint32_t timestamp = measure_tim_value;
     event_BLE_message.message_type = message_type;
     if(PACKET_RECEIVED_MESSAGE_TYPE == message_type)
@@ -119,43 +114,22 @@ void send_log_message_to_UART_mailbox (uint8_t message_type, uint32_t counter_pa
     {
         event_BLE_message.packet_number = counter_packet_send;
     }
-
+    else if (RECEIVE_BUFFER_STATUS == message_type)
+    {
+        event_BLE_message.packet_number = Mailbox_getNumPendingMsgs(mailbox);
+    }
     event_BLE_message.timestamp = timestamp;
-
-    event_BUF_status_message.buff_status = Mailbox_getNumPendingMsgs(mailbox);
-    event_BUF_status_message.timestamp = timestamp;
 
     swap_endian((uint8_t*)&event_BLE_message.packet_number, sizeof(event_BLE_message.packet_number));
     swap_endian((uint8_t*)&event_BLE_message.timestamp, sizeof(event_BLE_message.timestamp));
 
-    swap_endian((uint8_t*)&event_BUF_status_message.timestamp, sizeof(event_BUF_status_message.timestamp));
 
-    /* depending on message type - add message to Mailbox*/
-    /* different UART buffers were created, because if previous buffer was not sent,
-     * this buffer would be overwritten by new one
-     * */
-    if( PACKET_RECEIVED_MESSAGE_TYPE== event_BLE_message.message_type)
-    {
-        base64_encode((char *)logging_buffer_BLE_message_receive, (int32_t)(sizeof(logging_buffer_BLE_message_receive)), (const uint8_t *)&event_BLE_message, sizeof(event_BLE_message));
-        logging_buffer_BLE_message_receive[sizeof(logging_buffer_BLE_message_receive) - 1] = 0x0A;
-        Mailbox_post(mailbox_for_UART, logging_buffer_BLE_message_receive, BIOS_NO_WAIT);
-    }
-    else if( PACKET_SENT_MESSAGE_TYPE== event_BLE_message.message_type)
-    {
-        base64_encode((char *)logging_buffer_BLE_message_send, (int32_t)(sizeof(logging_buffer_BLE_message_send)), (const uint8_t *)&event_BLE_message, sizeof(event_BLE_message));
-        logging_buffer_BLE_message_send[sizeof(logging_buffer_BLE_message_send) - 1] = 0x0A;
-        Mailbox_post(mailbox_for_UART, logging_buffer_BLE_message_send, BIOS_NO_WAIT);
-
-    }
-    else if( PACKET_SENT_ERROR_TYPE== event_BLE_message.message_type)
-    {
-        base64_encode((char *)logging_buffer_BLE_message_send_error, (int32_t)(sizeof(logging_buffer_BLE_message_send_error)), (const uint8_t *)&event_BLE_message, sizeof(event_BLE_message));
-        logging_buffer_BLE_message_send_error[sizeof(logging_buffer_BLE_message_send_error) - 1] = 0x0A;
-        Mailbox_post(mailbox_for_UART, logging_buffer_BLE_message_send_error, BIOS_NO_WAIT);
-
-    }
+    base64_encode((char *)log_buffer_mailbox_UART, (int32_t)(sizeof(log_buffer_mailbox_UART)), (const uint8_t *)&event_BLE_message, sizeof(event_BLE_message));
+    log_buffer_mailbox_UART[sizeof(log_buffer_mailbox_UART) - 1] = 0x0A;
+    Mailbox_post(mailbox_for_UART, log_buffer_mailbox_UART, BIOS_NO_WAIT);
 }
 
+/* swap byte order of received array*/
 void swap_endian (uint8_t* pointer, uint32_t size)
 {
     uint8_t temp_array[size];
@@ -181,16 +155,8 @@ void stop_logging_clock (void)
 }
 
 
-static void UART_Send_Connection_Status_SwiFxn(UArg temp)
-{
-    while(sended_messages < CONNECTION_STATUS_MESSAGE_NUM) /* while not all status messages were sent */
-    {
-        ProjectZero_enqueueMsg(PZ_APP_MSG_Send_message_CONN_Status, NULL);
-        sended_messages++;
-        Util_startClock((Clock_Struct *)Uart_Connection_Status_ClockHandle);
-    }
-}
 
+/* callback for checking LOG mailbox and send data */
 static void LogUART_send_SwiFxn(UArg temp)
 {
     if(UART_ready)
@@ -220,21 +186,19 @@ void update_SID (pzCharacteristicData_t *pCharData)
         Util_startClock((Clock_Struct *)Uart_Connection_Status_ClockHandle); /* start to periodically send status messages to UART */
 }
 
-
-void Send_message_Buf_Status(void)
+/* function for sending satus connection messages when connection occurs*/
+static void UART_Send_Connection_Status_SwiFxn(UArg temp)
 {
-    base64_encode((char *)UART_BUF_status_message, (int32_t)(sizeof(UART_BUF_status_message)), (const uint8_t *)&event_BUF_status_message, sizeof(event_BUF_status_message));
-    UART_BUF_status_message[sizeof(UART_BUF_status_message) - 1] = 0x0A;
-    //while(!UART_ready)
+    while(sended_messages < CONNECTION_STATUS_MESSAGE_NUM) /* while not all status messages were sent */
     {
-        ; /* wait when previous UART message is sent*/
+        ProjectZero_enqueueMsg(PZ_APP_MSG_Send_message_CONN_Status, NULL);
+        sended_messages++;
+        Util_startClock((Clock_Struct *)Uart_Connection_Status_ClockHandle);
     }
-    UART_ready = false;
-    UART_write(uart, UART_BUF_status_message, sizeof(UART_BUF_status_message));
-//            UART_write(uart, &event_BUF_status_message, sizeof(event_BUF_status_message));
 }
-
-
+/* function for physical sending connection Status messages to UART
+ * * added because long functions shall be called only from Application context, not from HWI or SWI
+ *  */
 void Send_message_CONN_Status (void)
 {
     base64_encode((char *)UART_buffer_connection_status, (int32_t)(sizeof(UART_buffer_connection_status)), (const uint8_t *)&event_connection_status_message, sizeof(event_connection_status_message));
@@ -245,7 +209,8 @@ void Send_message_CONN_Status (void)
     }
     UART_ready = false;
     UART_write(uart, UART_buffer_connection_status, sizeof(UART_buffer_connection_status));
-//            UART_write(uart, &event_connection_status_message, sizeof(event_connection_status_message));
 }
+
+
 
 #endif

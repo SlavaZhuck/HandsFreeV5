@@ -94,7 +94,11 @@ void max9860_I2C_Shutdown_state(uint8_t state){
     if(state){
         i2cTxBuffer[1]  = 0x00;//!DAC att  digital level control    0x09
     }else{
+#ifdef SECOND_MICROPHONE
         i2cTxBuffer[1]  = 0x8B;
+#else
+        i2cTxBuffer[1]  = 0x8A;
+#endif
     }
     I2C_transfer(i2c, &i2cTransaction);
 }
