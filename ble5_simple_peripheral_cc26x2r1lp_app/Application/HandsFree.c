@@ -45,8 +45,8 @@
 
 
 /******local functions START***************************************************/
-static void readCallback(UART_Handle handle, void *rxBuf, size_t size);
-static void writeCallback(UART_Handle handle_uart, void *rxBuf, size_t size);
+static void UARTreadCallback(UART_Handle handle, void *rxBuf, size_t size);
+static void UARTwriteCallback(UART_Handle handle_uart, void *rxBuf, size_t size);
 
 static void bufRdy_callback(I2SCC26XX_Handle handle, I2SCC26XX_StreamNotification *pStreamNotification);
 static void AudioDuplex_enableCache();
@@ -89,7 +89,8 @@ static GPTimerCC26XX_Handle measure_tim_hdl = NULL;
 static GPTimerCC26XX_Handle samp_tim_hdl = NULL;
 static GPTimerCC26XX_Value load_val[2] = {LOW_STATE_TIME, HIGH_STATE_TIME};
 uint32_t measure_tim_value = UINT_MAX/2   ; /* in ms */
-
+static bool blink = false;
+static bool bat_low = false;
 /* Timer variables END***************************************************/
 
 /* Debug measure variables START***************************************************/
@@ -199,6 +200,7 @@ static uint8_t mailpost_usage;
 //static uint8_t resend_counter = 0;
 
 static uint8_t send_status = 0;
+static uint8_t last_error_send_status = 0; /* for debug purpose */
 uint32_t counter_packet_received = 0;
 static uint32_t previous_receive_counter = 0;
 
@@ -257,7 +259,7 @@ extern ADCBuf_Handle adc_hdl;
 extern pzConnRec_t connList[MAX_NUM_BLE_CONNS];
 extern bool connection_occured;
 extern List_List paramUpdateList;
-extern bool button_check;
+extern bool power_button_check;
 extern bool enable_blink;
 extern PIN_Handle ledPinHandle;
 /******** extern variables END ***************************************************/
@@ -444,13 +446,15 @@ void start_voice_handle(void)
     counter_adc_data_read = 0;
     counter_packet_received = 0;
 
+    GPTimerCC26XX_stop(blink_tim_hdl);
+    PIN_setOutputValue(ledPinHandle, Board_PIN_GLED, 1);
     max9860_I2C_Shutdown_state(0);//disable shutdown_mode
     //ProjectZero_enqueueMsg(PZ_APP_MSG_Load_vol, NULL);// read global vol level
     osal_snv_read(INIT_VOL_ADDR, 1, &current_volume);
     PIN_setOutputValue(ledPinHandle, Board_PIN_GLED, 1);
     GPTimerCC26XX_setLoadValue(samp_tim_hdl, (GPTimerCC26XX_Value)SAMP_TIME);
     GPTimerCC26XX_start(samp_tim_hdl);
-    GPTimerCC26XX_start(measure_tim_hdl);
+//    GPTimerCC26XX_start(measure_tim_hdl);
     I2SCC26XX_startStream(i2sHandle);
     stream_on = 1;
 #ifdef LOGGING
@@ -471,6 +475,7 @@ void start_voice_handle(void)
 //        /* Error opening Watchdog */
 //        while (1);
 //    }
+
 }
 
 
@@ -524,7 +529,8 @@ void stop_voice_handle(void)
     /* save current volume level */
     //ProjectZero_enqueueMsg(PZ_APP_MSG_Write_vol, NULL);
     osal_snv_write(INIT_VOL_ADDR, 1, &current_volume);
-
+    PIN_setOutputValue(ledPinHandle, Board_PIN_GLED, 0);
+    GPTimerCC26XX_start(blink_tim_hdl);
 }
 
 
@@ -606,8 +612,8 @@ void HandsFree_init (void)
     uartParams.writeMode        = UART_MODE_BLOCKING;
     uartParams.writeTimeout      = UART_WAIT_FOREVER; //UART_WAIT_FOREVER
 #endif
-    uartParams.readCallback     = readCallback;
-    uartParams.writeCallback    = writeCallback;
+    uartParams.readCallback     = UARTreadCallback;
+    uartParams.writeCallback    = UARTwriteCallback;
     uartParams.readReturnMode   = UART_RETURN_FULL;
     uartParams.readEcho         = UART_ECHO_OFF;
     uartParams.baudRate         = UART_BAUD_RATE;
@@ -671,10 +677,9 @@ void HandsFree_init (void)
 
 void blink_timer_callback(GPTimerCC26XX_Handle handle, GPTimerCC26XX_IntMask interruptMask)
 {
-    static bool blink = false;
-    static bool bat_low = false;
 
-    if(button_check)
+
+    if(power_button_check)
     {
         ProjectZero_enqueueMsg(PZ_APP_MSG_Read_ADC_Power_Button_Voltage, NULL);
     }
@@ -719,6 +724,8 @@ void blink_timer_callback(GPTimerCC26XX_Handle handle, GPTimerCC26XX_IntMask int
         PIN_setOutputValue(ledPinHandle, Board_PIN_RLED, 1);
         PIN_setOutputValue(ledPinHandle, Board_PIN_GLED, 0);
     }
+
+//    ProjectZero_enqueueMsg(PZ_APP_MSG_Blinking, NULL);
 }
 
 void samp_timer_callback(GPTimerCC26XX_Handle handle, GPTimerCC26XX_IntMask interruptMask)
@@ -919,8 +926,9 @@ void USER_task_Handler (pzMsg_t *pMsg)
 
             //encrypt_packet(send_array);
             send_status = DataService_SetParameter(DS_STREAM_OUTPUT_ID, DS_STREAM_OUTPUT_LEN, send_array);
-            if((send_status != SUCCESS) || (send_status == 0x15)) /* 0x15 bleNoResources*/
+            if((send_status != SUCCESS) )//|| (send_status == 0x15)) /* 0x15 bleNoResources*/
             {
+                last_error_send_status = send_status; /* for debug purpose */
                 counter_packet_resend_attemps++;
                 Util_startClock((Clock_Struct *)Resend_BLEpacket_ClockHandle);
                 /* safe current packet number to check before repeat */
@@ -990,7 +998,7 @@ void USER_task_Handler (pzMsg_t *pMsg)
         case PZ_APP_MSG_Read_ADC_Battery_Voltage:
         {
             adc_conversion.adcChannel = ADC_VOLTAGE_MEASURE_PIN;
-            button_check = FALSE;
+            power_button_check = FALSE;
             if (ADCBuf_convert(adc_hdl, &adc_conversion, 1) != ADCBuf_STATUS_SUCCESS)
             {
                 while(1);
@@ -1003,7 +1011,7 @@ void USER_task_Handler (pzMsg_t *pMsg)
         case PZ_APP_MSG_Read_ADC_Battery_Voltage_UART:
         {
             adc_conversion.adcChannel = ADC_VOLTAGE_MEASURE_PIN;
-            button_check = FALSE;
+            power_button_check = FALSE;
             if (ADCBuf_convert(adc_hdl, &adc_conversion, 1) != ADCBuf_STATUS_SUCCESS)
             {
                 while(1);
@@ -1058,7 +1066,7 @@ void USER_task_Handler (pzMsg_t *pMsg)
             if(counter_packet_send == save_counter_packet_send)
             {
                 send_status = DataService_SetParameter(DS_STREAM_OUTPUT_ID, DS_STREAM_OUTPUT_LEN, send_array);
-                if((send_status != SUCCESS) || (send_status == 0x15)) /* 0x15 bleNoResources*/
+                if((send_status != SUCCESS))// || (send_status == 0x15)) /* 0x15 bleNoResources*/
                 {
 #ifdef LOGGING
                     send_log_message_to_UART_mailbox(PACKET_SENT_ERROR_TYPE, 0);
@@ -1082,6 +1090,8 @@ void USER_task_Handler (pzMsg_t *pMsg)
 #endif
                 counter_packet_send++;  /* increment total packet send counter */
             }
+        break;
+        case PZ_APP_MSG_Blinking:
         break;
 
         default:
@@ -1238,13 +1248,13 @@ static void AudioDuplex_enableCache()
     Hwi_restore(hwiKey);
 }
 
-static void writeCallback(UART_Handle handle_uart, void *rxBuf, size_t size)
+static void UARTwriteCallback(UART_Handle handle_uart, void *rxBuf, size_t size)
 {
 //SPPBLEServer_enqueueUARTMsg(SBC_UART_CHANGE_EVT,rxBuf,size);
     UART_ready = true;
 }
 
-static void readCallback(UART_Handle handle, void *rxBuf, size_t size)
+static void UARTreadCallback(UART_Handle handle, void *rxBuf, size_t size)
 {
  //   memset(&test_CRC,0,sizeof(test_CRC));
 

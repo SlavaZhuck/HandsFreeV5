@@ -27,7 +27,7 @@ ADCBuf_Conversion adc_conversion;
 int16_t batt_voltage[ADCBUFSIZE];
 static int16_t samp_buf1[ADCBUFSIZE];
 static int16_t samp_buf2[ADCBUFSIZE];
-bool button_check = TRUE;
+bool power_button_check = TRUE;
 bool enable_blink = TRUE;
 
 PIN_Config powerPinTable[] = {
@@ -81,7 +81,7 @@ void adc_callback(ADCBuf_Handle handle, ADCBuf_Conversion *conversion, void *com
     int16_t *buf_ptr = (int16_t*)completedADCBuffer;
     /* handle receive data */
 
-    if(button_check)/* uart battery read is turned OFF*/
+    if(power_button_check)/* uart battery read is turned OFF*/
     {
         power_button_voltage[0] = buf_ptr[0] ;
         if (power_button_voltage[0] < ADC_POWER_BUTTON_THRESHOLD)
@@ -124,7 +124,7 @@ void adc_callback(ADCBuf_Handle handle, ADCBuf_Conversion *conversion, void *com
     else
     {
         batt_voltage[0] = buf_ptr[0] ;
-        button_check = TRUE;
+        power_button_check = TRUE;
     }
 
    // ADCBuf_convertCancel(adc_hdl);
@@ -132,7 +132,7 @@ void adc_callback(ADCBuf_Handle handle, ADCBuf_Conversion *conversion, void *com
 
 static void ADC_ChannelSwitchSwiFxn(UArg buttonId)
 {
-    if(button_check)
+    if(power_button_check)
     {
         adc_conversion.adcChannel = ADC_POWER_BUTTON_PIN;
         if (ADCBuf_convert(adc_hdl, &adc_conversion, 1) != ADCBuf_STATUS_SUCCESS) {
