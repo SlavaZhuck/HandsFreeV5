@@ -80,13 +80,15 @@ void get_fh_param(void){
 extern uint8_t global_key[];
 
 void send_fh_key (void){
-
     clear_Tx_packet();
 
-    if(!write_aes_key((uint8_t *)&Rx_Data.data)){
-        read_aes_key(global_key);//read key to make it work at time of write action
+    if(!write_aes_key((uint8_t *)&Rx_Data.data))
+    {
+        //read_aes_key(global_key);//read key to make it work at time of write action
         send_answer_for_command(REC_OK);
-    }else{
+    }
+    else
+    {
         send_answer_for_command(REC_ERROR) ;
     }
 }
@@ -95,14 +97,14 @@ void get_fh_key(void){
 
     clear_Tx_packet();
 
-    if(!read_aes_key(global_key)){
+    if(!read_aes_key(&Tx_Data.data[0]))
+    {
         Tx_Data.data_lenght = KEY_SIZE;
-        for(uint8_t i = 0 ;i<KEY_SIZE;i++){
-            Tx_Data.data[i]=global_key[i];
-        }
         Tx_Data.command = SEND_FH_KEY ;
         calcCRC_andSend();
-    }else{
+    }
+    else
+    {
         Tx_Data.command = REC_ERROR ;
         calcCRC_andSend();
     }
@@ -113,13 +115,13 @@ void get_fh_cr_tp(void){
     char type[7]= {'A', 'e', 's', '1', '2', '8' , '\0'};
     Tx_Data.data_lenght = 7;
 
-    for(uint8_t i = 0 ;i<Tx_Data.data_lenght;i++){
+    for(uint8_t i = 0 ;i<Tx_Data.data_lenght;i++)
+    {
         Tx_Data.data[i]=type[i];
     }
     Tx_Data.command = SEND_FH_CR_TP;
     calcCRC_andSend();
 }
-
 
 void no_command (void){
     clear_Tx_packet();

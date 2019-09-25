@@ -126,7 +126,7 @@ static GPTimerCC26XX_Value timestamp_NG_stop;
 static GPTimerCC26XX_Value timestamp_NG_dif;
 static struct power_struct in_power;
 
-bool enable_NoiseGate = false;
+bool enable_NoiseGate = true;
 /*****************NOISE GATE END***********************************/
 
 /***********Echo compensation START****************************************************/
@@ -143,12 +143,9 @@ static float EC_filt_coeffs_debug[EC_FILTER_SIZE];
 #define INIT_VOL_ADDR                       (BLE_NVID_CUST_START+1)
     /* CryptoKey storage */
 static CryptoKey           cryptoKey;
-/* global key applied in the system*/
-uint8_t global_key[KEY_SIZE] =
-                                {0x2B, 0x7E, 0x15, 0x16, 0x28, 0xAE, 0xD2, 0xA6,
-                                0xAB, 0xF7, 0x15, 0x88, 0x09, 0xCF, 0x4F, 0x3C};
+uint8_t global_key[KEY_SIZE] = {0};
 /* default key, if there were no write key operations*/
-static const uint8_t default_key[] =
+static const uint8_t default_key[KEY_SIZE] =
                                 {0x2B, 0x7E, 0x15, 0x16, 0x28, 0xAE, 0xD2, 0xA6,
                                 0xAB, 0xF7, 0x15, 0x88, 0x09, 0xCF, 0x4F, 0x3C};
     /* AESCBC variables */
@@ -642,9 +639,12 @@ void HandsFree_init (void)
         /* AESECM_open_open() failed */
         while(1);
     }
-    /* Initialize the key structure */
-    read_aes_key(global_key);
-    CryptoKeyPlaintext_initKey(&cryptoKey, (uint8_t*) global_key, sizeof(global_key));
+    {
+
+        /* Initialize the key structure */
+        read_aes_key(global_key);
+        CryptoKeyPlaintext_initKey(&cryptoKey, (uint8_t*) global_key, KEY_SIZE);
+    }
 #ifdef LOGGING
     logging_init();
 #endif
@@ -800,7 +800,7 @@ void USER_task_Handler (pzMsg_t *pMsg)
                 Mailbox_pend(mailbox, packet_data, BIOS_NO_WAIT);
 
                 timestamp_decode_start =  measure_tim_value;
-                //decrypt_packet(packet_data);
+                decrypt_packet(packet_data);
                 decoder_adpcm.prevsample = ((int16_t)(packet_data[V_STREAM_OUTPUT_SOUND_LEN]) << 8) |
                         (int16_t)(packet_data[V_STREAM_OUTPUT_SOUND_LEN + 1]);
 
@@ -924,7 +924,7 @@ void USER_task_Handler (pzMsg_t *pMsg)
             timestamp_encode_stop =  measure_tim_value;
             timestamp_encode_dif = timestamp_encode_stop - timestamp_encode_start;
 
-            //encrypt_packet(send_array);
+            encrypt_packet(send_array);
             send_status = DataService_SetParameter(DS_STREAM_OUTPUT_ID, DS_STREAM_OUTPUT_LEN, send_array);
             if((send_status != SUCCESS) )//|| (send_status == 0x15)) /* 0x15 bleNoResources*/
             {
@@ -1351,13 +1351,22 @@ uint8_t read_aes_key(uint8_t *key)
     if(status != SUCCESS)
     {
         memcpy(key, default_key, KEY_SIZE);
+        CryptoKeyPlaintext_initKey(&cryptoKey, (uint8_t*) key, KEY_SIZE);
     }
-    CryptoKeyPlaintext_initKey(&cryptoKey, (uint8_t*) key, sizeof(*key));
 
     return status;
 }
 
 uint8_t write_aes_key(uint8_t *key)
 {
-    return (osal_snv_write(KEY_SNV_ID, KEY_SIZE, key));
+    uint8_t status;
+    status = osal_snv_write(KEY_SNV_ID, KEY_SIZE, key);
+
+    if( status == SUCCESS )
+    {
+        memcpy(global_key, key, KEY_SIZE);
+        CryptoKeyPlaintext_initKey(&cryptoKey, (uint8_t*) global_key, KEY_SIZE);
+
+    }
+    return status;
 }
